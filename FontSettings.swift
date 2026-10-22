@@ -123,6 +123,7 @@ struct SettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var store: TaskStore
     @ObservedObject var fontLibrary: FontLibrary
+    @ObservedObject var reminderSync: RemindersSync
     let onOpacity: (Double) -> Void
     let onImport: () -> Void
     let onCategory: () -> Void
@@ -145,22 +146,24 @@ struct SettingsSheet: View {
                 VStack(spacing: 7) {
                     Image(systemName: "textformat").font(.system(size: 22)).foregroundStyle(.secondary)
                     Text("将字体文件拖到这里").font(.system(size: 13))
-                    Text("支持 .ttf、.otf、.ttc").font(.system(size: 11)).foregroundStyle(.secondary)
-                    Button("选择字体文件…") { chooseFontFile() }
+                    Text("可一次拖入多个 .ttf、.otf、.ttc 文件").font(.system(size: 11)).foregroundStyle(.secondary)
+                    Button("选择多个字体文件…") { chooseFontFiles() }
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: 125)
                 .background(RoundedRectangle(cornerRadius: 13).fill(dropTargeted ? Color.blue.opacity(0.11) : Color.gray.opacity(0.07)))
                 .overlay(RoundedRectangle(cornerRadius: 13).strokeBorder(dropTargeted ? Color.blue.opacity(0.55) : Color.gray.opacity(0.22), style: StrokeStyle(lineWidth: 1, dash: [5, 4])))
                 .onDrop(of: [UTType.fileURL.identifier], isTargeted: $dropTargeted) { providers in
-                    guard let provider = providers.first else { return false }
-                    provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-                        let url: URL?
-                        if let item = item as? URL { url = item }
-                        else if let data = item as? Data { url = URL(dataRepresentation: data, relativeTo: nil) }
-                        else if let path = item as? String { url = URL(fileURLWithPath: path) }
-                        else { url = nil }
-                        if let url { Task { @MainActor in fontLibrary.importFont(url) } }
+                    guard !providers.isEmpty else { return false }
+                    for provider in providers {
+                        provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                            let url: URL?
+                            if let item = item as? URL { url = item }
+                            else if let data = item as? Data { url = URL(dataRepresentation: data, relativeTo: nil) }
+                            else if let path = item as? String { url = URL(fileURLWithPath: path) }
+                            else { url = nil }
+                            if let url { Task { @MainActor in fontLibrary.importFont(url) } }
+                        }
                     }
                     return true
                 }
@@ -168,12 +171,20 @@ struct SettingsSheet: View {
                     Text(error).font(.system(size: 11)).foregroundStyle(.red)
                 }
                 if !fontLibrary.fonts.isEmpty {
+                    Text("已保存字体 · \(fontLibrary.fonts.count) 种")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
                     ScrollView {
-                        VStack(spacing: 4) {
+                        LazyVStack(spacing: 4) {
                             ForEach(fontLibrary.fonts) { font in
                                 Button { fontLibrary.selectedID = font.id } label: {
                                     HStack {
-                                        Text(font.displayName).font(.custom(font.postScriptName, size: 13))
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(font.displayName).font(.system(size: 12, weight: .medium))
+                                            Text("今天要完成的事 · Aa 123")
+                                                .font(.custom(font.postScriptName, size: 13))
+                                                .lineLimit(1)
+                                        }
                                         Spacer()
                                         if font.id == fontLibrary.appliedID { Text("使用中").font(.system(size: 10)).foregroundStyle(.secondary) }
                                         if font.id == fontLibrary.selectedID { Image(systemName: "checkmark").font(.system(size: 11)) }
@@ -185,7 +196,7 @@ struct SettingsSheet: View {
                             }
                         }
                     }
-                    .frame(height: min(CGFloat(fontLibrary.fonts.count) * 38, 114))
+                    .frame(height: min(CGFloat(fontLibrary.fonts.count) * 53, 175))
                 }
                 Text("今天要完成的事 · Aa 123")
                     .font(fontLibrary.previewFont(19))
@@ -203,8 +214,12 @@ struct SettingsSheet: View {
             }
 
             Divider()
+            AppearanceSettings()
+            Divider()
+            RemindersSettings(sync: reminderSync)
+            Divider()
             HStack {
-                Text("窗口透明度").font(.system(size: 12))
+                Text("整个窗口透明度").font(.system(size: 12))
                 Slider(value: $opacity, in: 0.72...1)
                     .onChange(of: opacity) { value in onOpacity(value) }
             }
@@ -227,15 +242,17 @@ struct SettingsSheet: View {
             }
         }
         .padding(24)
-        .frame(width: 440, height: 510)
+        .frame(width: 440, height: 570)
     }
 
-    private func chooseFontFile() {
+    private func chooseFontFiles() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
-        panel.allowsMultipleSelection = false
-        panel.message = "选择 TrueType 或 OpenType 字体文件"
-        if panel.runModal() == .OK, let url = panel.url { fontLibrary.importFont(url) }
+        panel.allowsMultipleSelection = true
+        panel.message = "可一次选择多个 TrueType 或 OpenType 字体文件"
+        if panel.runModal() == .OK {
+            for url in panel.urls { fontLibrary.importFont(url) }
+        }
     }
 }

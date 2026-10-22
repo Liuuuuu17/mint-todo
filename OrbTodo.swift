@@ -41,6 +41,7 @@ struct SavedData: Codable {
     @Published private(set) var categories: [String] = ["工作", "生活", "内容", "学习"]
     @Published private(set) var tasks: [Todo] = []
     @Published var selectedStatus: TaskStatus = .todo
+    var onChange: (() -> Void)?
 
     let fileURL: URL
     private var lastModified: Date?
@@ -70,6 +71,7 @@ struct SavedData: Codable {
         guard let data = try? encoder.encode(SavedData(categories: categories, tasks: tasks)) else { return }
         try? data.write(to: fileURL, options: .atomic)
         lastModified = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+        onChange?()
     }
 
     private static func decode(_ data: Data) -> SavedData? {
@@ -87,6 +89,29 @@ struct SavedData: Codable {
         categories = saved.categories.isEmpty ? ["收件箱"] : saved.categories
         tasks = saved.tasks
         lastModified = modified
+        onChange?()
+    }
+
+    func applyReminderChanges(updates: [Todo], deletedIDs: Set<UUID>) {
+        var changed = false
+        for updated in updates {
+            if let index = tasks.firstIndex(where: { $0.id == updated.id }) {
+                if tasks[index] != updated { tasks[index] = updated; changed = true }
+            } else {
+                tasks.append(updated)
+                changed = true
+            }
+            if !categories.contains(updated.category) {
+                categories.append(updated.category)
+                changed = true
+            }
+        }
+        if !deletedIDs.isEmpty {
+            let oldCount = tasks.count
+            tasks.removeAll { deletedIDs.contains($0.id) }
+            if tasks.count != oldCount { changed = true }
+        }
+        if changed { save() }
     }
 
     func add(_ title: String, category: String) {
@@ -203,9 +228,11 @@ struct VisualEffect: NSViewRepresentable {
 struct WidgetView: View {
     @ObservedObject var store: TaskStore
     @ObservedObject var fontLibrary: FontLibrary
+    @ObservedObject var reminderSync: RemindersSync
     let onCollapse: () -> Void
     let onPin: (Bool) -> Void
     let onOpacity: (Double) -> Void
+    let onResize: (CGSize) -> Void
 
     @State private var input = ""
     @State private var chosenCategory = "工作"
@@ -215,8 +242,11 @@ struct WidgetView: View {
     @State private var showArchive = false
     @State private var showSettings = false
     @AppStorage("widgetPinned") private var pinned = true
+    @AppStorage("widgetWidth") private var widgetWidth = 405.0
+    @AppStorage("widgetHeight") private var widgetHeight = 560.0
     @State private var collapsedGroups: Set<String> = []
     @State private var importedCount: Int?
+    @State private var resizeOrigin: CGSize?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -241,11 +271,10 @@ struct WidgetView: View {
             }
             bottomBar
         }
-        .frame(width: 405, height: 560)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(minWidth: 320, minHeight: 380)
         .background {
-            VisualEffect()
-                .overlay(Color(red: 0.95, green: 0.95, blue: 0.98).opacity(0.36))
-                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            AppearanceBackground()
         }
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(.white.opacity(0.7), lineWidth: 1))
@@ -258,6 +287,7 @@ struct WidgetView: View {
             SettingsSheet(
                 store: store,
                 fontLibrary: fontLibrary,
+                reminderSync: reminderSync,
                 onOpacity: onOpacity,
                 onImport: { showSettings = false; DispatchQueue.main.async { showImport = true } },
                 onCategory: { showSettings = false; DispatchQueue.main.async { showCategory = true } },
@@ -288,6 +318,26 @@ struct WidgetView: View {
         .foregroundStyle(.secondary)
         .padding(.horizontal, 23)
         .frame(height: 48)
+    }
+
+    private var resizeHandle: some View {
+        Text("↘")
+            .font(.system(size: 15, weight: .medium))
+            .foregroundStyle(Color(red: 0.38, green: 0.41, blue: 0.55))
+            .frame(width: 24, height: 24)
+            .background(Circle().fill(.white.opacity(0.8)))
+            .contentShape(Rectangle())
+            .help("拖动调整窗口大小")
+            .gesture(DragGesture(minimumDistance: 2)
+                .onChanged { value in
+                    if resizeOrigin == nil {
+                        resizeOrigin = CGSize(width: widgetWidth, height: widgetHeight)
+                    }
+                    guard let origin = resizeOrigin else { return }
+                    onResize(CGSize(width: origin.width + value.translation.width,
+                                    height: origin.height + value.translation.height))
+                }
+                .onEnded { _ in resizeOrigin = nil })
     }
 
     private var statusBar: some View {
@@ -447,6 +497,11 @@ struct WidgetView: View {
         .padding(.horizontal, 20)
         .padding(.bottom, 20)
         .padding(.top, 8)
+        .overlay(alignment: .bottomTrailing) {
+            resizeHandle
+                .padding(.trailing, 7)
+                .padding(.bottom, 4)
+        }
     }
 
     private func addInput() {
@@ -622,19 +677,27 @@ final class FloatingPanel: NSPanel {
 @MainActor final class AppController: NSObject, NSApplicationDelegate {
     private let store = TaskStore()
     private let fontLibrary = FontLibrary()
+    private var reminders: RemindersSync!
     private var widget: FloatingPanel!
     private var orb: FloatingPanel!
     private var statusItem: NSStatusItem!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        reminders = RemindersSync(tasks: store)
+        store.onChange = { [weak self] in self?.reminders.scheduleSync() }
         makeWindows()
         makeMenuBar()
         showWidget()
     }
 
     private func makeWindows() {
-        widget = FloatingPanel(contentRect: NSRect(x: 0, y: 0, width: 405, height: 560), styleMask: [.borderless], backing: .buffered, defer: false)
+        let savedWidth = UserDefaults.standard.double(forKey: "widgetWidth")
+        let savedHeight = UserDefaults.standard.double(forKey: "widgetHeight")
+        let initialWidth = savedWidth > 0 ? max(320, savedWidth) : 405
+        let initialHeight = savedHeight > 0 ? max(380, savedHeight) : 560
+        widget = FloatingPanel(contentRect: NSRect(x: 0, y: 0, width: initialWidth, height: initialHeight), styleMask: [.borderless, .resizable], backing: .buffered, defer: false)
+        widget.minSize = NSSize(width: 320, height: 380)
         widget.isOpaque = false
         widget.backgroundColor = .clear
         widget.hasShadow = false
@@ -644,10 +707,12 @@ final class FloatingPanel: NSPanel {
         widget.contentView = NSHostingView(rootView: WidgetView(
             store: store,
             fontLibrary: fontLibrary,
+            reminderSync: reminders,
             onCollapse: { [weak self] in self?.showOrb() },
             onPin: { [weak self] value in self?.widget.level = value ? .floating : .normal },
             onOpacity: { [weak self] value in self?.widget.alphaValue = value
-                UserDefaults.standard.set(value, forKey: "widgetOpacity") }
+                UserDefaults.standard.set(value, forKey: "widgetOpacity") },
+            onResize: { [weak self] size in self?.resizeWidget(to: size) }
         ))
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
         if let saved = UserDefaults.standard.string(forKey: "widgetTopLeft") {
@@ -657,6 +722,7 @@ final class FloatingPanel: NSPanel {
         }
         widget.alphaValue = UserDefaults.standard.object(forKey: "widgetOpacity") as? Double ?? 0.94
         NotificationCenter.default.addObserver(self, selector: #selector(windowMoved), name: NSWindow.didMoveNotification, object: widget)
+        NotificationCenter.default.addObserver(self, selector: #selector(windowResized), name: NSWindow.didResizeNotification, object: widget)
 
         orb = FloatingPanel(contentRect: NSRect(x: screen.maxX - 42, y: screen.maxY - 42, width: 26, height: 26), styleMask: [.borderless], backing: .buffered, defer: false)
         orb.isOpaque = false
@@ -677,6 +743,20 @@ final class FloatingPanel: NSPanel {
     @objc private func windowMoved() {
         let point = NSPoint(x: widget.frame.minX, y: widget.frame.maxY)
         UserDefaults.standard.set(NSStringFromPoint(point), forKey: "widgetTopLeft")
+    }
+
+    @objc private func windowResized() {
+        UserDefaults.standard.set(widget.frame.width, forKey: "widgetWidth")
+        UserDefaults.standard.set(widget.frame.height, forKey: "widgetHeight")
+    }
+
+    private func resizeWidget(to requested: CGSize) {
+        let screen = widget.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
+        let width = min(max(320, requested.width), min(900, screen.width - 20))
+        let height = min(max(380, requested.height), min(900, screen.height - 20))
+        let top = min(widget.frame.maxY, screen.maxY)
+        let origin = NSPoint(x: min(widget.frame.minX, screen.maxX - width), y: max(screen.minY, top - height))
+        widget.setFrame(NSRect(origin: origin, size: NSSize(width: width, height: height)), display: true)
     }
 
     private func makeMenuBar() {

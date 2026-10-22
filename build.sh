@@ -18,8 +18,8 @@ for n in 16 32 128 256 512; do
   sips -z "$double" "$double" "$BUILD_DIR/icon-1024.png" --out "$BUILD_DIR/icon.iconset/icon_${n}x${n}@2x.png" >/dev/null
 done
 iconutil -c icns "$BUILD_DIR/icon.iconset" -o "$APP/Contents/Resources/OrbTodo.icns"
-swiftc -parse-as-library -swift-version 5 -target arm64-apple-macos13.0 -O -framework AppKit -framework SwiftUI -framework CoreText OrbTodo.swift FontSettings.swift -o "$BUILD_DIR/OrbTodo-arm64"
-swiftc -parse-as-library -swift-version 5 -target x86_64-apple-macos13.0 -O -framework AppKit -framework SwiftUI -framework CoreText OrbTodo.swift FontSettings.swift -o "$BUILD_DIR/OrbTodo-x86_64"
+swiftc -parse-as-library -swift-version 5 -target arm64-apple-macos13.0 -O -framework AppKit -framework SwiftUI -framework CoreText -framework EventKit OrbTodo.swift FontSettings.swift AppearanceSettings.swift RemindersSync.swift -o "$BUILD_DIR/OrbTodo-arm64"
+swiftc -parse-as-library -swift-version 5 -target x86_64-apple-macos13.0 -O -framework AppKit -framework SwiftUI -framework CoreText -framework EventKit OrbTodo.swift FontSettings.swift AppearanceSettings.swift RemindersSync.swift -o "$BUILD_DIR/OrbTodo-x86_64"
 lipo -create "$BUILD_DIR/OrbTodo-arm64" "$BUILD_DIR/OrbTodo-x86_64" -output "$APP/Contents/MacOS/OrbTodo"
 xattr -cr "$APP"
 codesign --force --deep --sign - "$APP"
