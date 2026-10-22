@@ -1,6 +1,6 @@
 # Orb Todo
 
-一个参考录屏制作的 macOS 桌面悬浮待办应用。支持 Apple Silicon 和 Intel Mac，要求 macOS 13 或更新版本。
+一个 macOS 桌面悬浮待办应用。支持 Apple Silicon 和 Intel Mac，要求 macOS 13 或更新版本。
 
 ## 安装与使用
 
