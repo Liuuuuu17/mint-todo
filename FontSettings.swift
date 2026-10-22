@@ -21,10 +21,16 @@ private struct FontManifest: Codable {
     @Published private(set) var appliedID: UUID?
     @Published var errorMessage: String?
 
+    @Published var textSize: Double = 13.5 {
+        didSet { UserDefaults.standard.set(textSize, forKey: "taskFontSize") }
+    }
+
     private let folder: URL
     private let manifestURL: URL
 
     init() {
+        let savedSize = UserDefaults.standard.double(forKey: "taskFontSize")
+        textSize = savedSize > 0 ? min(max(savedSize, 10), 24) : 13.5
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("OrbTodo", isDirectory: true)
         folder = base.appendingPathComponent("Fonts", isDirectory: true)
@@ -105,13 +111,15 @@ private struct FontManifest: Codable {
     }
 
     func font(_ size: CGFloat, weight: Font.Weight = .regular, monospaced: Bool = false) -> Font {
+        let adjustedSize = size * CGFloat(textSize / 13.5)
         if let applied = fonts.first(where: { $0.id == appliedID }) {
-            return .custom(applied.postScriptName, size: size).weight(weight)
+            return .custom(applied.postScriptName, size: adjustedSize).weight(weight)
         }
-        return .system(size: size, weight: weight, design: monospaced ? .monospaced : .default)
+        return .system(size: adjustedSize, weight: weight, design: monospaced ? .monospaced : .default)
     }
 
     func previewFont(_ size: CGFloat) -> Font {
+        let size = size * CGFloat(textSize / 13.5)
         if let selected = fonts.first(where: { $0.id == selectedID }) {
             return .custom(selected.postScriptName, size: size)
         }
@@ -146,6 +154,13 @@ struct SettingsSheet: View {
                 VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 12) {
                 Text("字体").font(.system(size: 14, weight: .semibold))
+                HStack {
+                    Text("字号").font(.system(size: 12))
+                    Slider(value: $fontLibrary.textSize, in: 10...24, step: 0.5)
+                    Text(String(format: "%.1f pt", fontLibrary.textSize))
+                        .font(.system(size: 11).monospacedDigit()).frame(width: 54)
+                    Button("重置") { fontLibrary.textSize = 13.5 }
+                }
                 VStack(spacing: 7) {
                     Image(systemName: "textformat").font(.system(size: 22)).foregroundStyle(.secondary)
                     Text("将字体文件拖到这里").font(.system(size: 13))

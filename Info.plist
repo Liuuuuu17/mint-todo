@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>CFBundleName</key><string>Orb Todo</string>
-  <key>CFBundleDisplayName</key><string>Orb Todo</string>
+  <key>CFBundleName</key><string>Mint Todo</string>
+  <key>CFBundleDisplayName</key><string>Mint Todo</string>
   <key>CFBundleIdentifier</key><string>com.codex.orbtodo</string>
-  <key>CFBundleVersion</key><string>5</string>
-  <key>CFBundleShortVersionString</key><string>1.3.1</string>
-  <key>CFBundleExecutable</key><string>OrbTodo</string>
-  <key>CFBundleIconFile</key><string>OrbTodo.icns</string>
+  <key>CFBundleVersion</key><string>6</string>
+  <key>CFBundleShortVersionString</key><string>1.4</string>
+  <key>CFBundleExecutable</key><string>MintTodo</string>
+  <key>CFBundleIconFile</key><string>MintTodo.icns</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
-  <key>NSRemindersUsageDescription</key><string>将 Orb Todo 的待办与您选择的提醒事项列表同步。</string>
-  <key>NSRemindersFullAccessUsageDescription</key><string>读取并更新您选择的提醒事项列表，与 Orb Todo 双向同步。</string>
+  <key>NSRemindersUsageDescription</key><string>将 Mint Todo 的待办与您选择的提醒事项列表同步。</string>
+  <key>NSRemindersFullAccessUsageDescription</key><string>读取并更新您选择的提醒事项列表，与 Mint Todo 双向同步。</string>
 </dict></plist>
