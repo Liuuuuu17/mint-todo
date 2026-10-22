@@ -1,3 +1,3 @@
-# Download
+# Mint Todo for Mac
 
-Download `OrbTodo-macOS.zip` from this folder, unzip it, and move `Orb Todo.app` to Applications. Requires macOS 13 or later.
+Download [MintTodo-macOS.zip](MintTodo-macOS.zip), unzip it, and move **Mint Todo.app** to Applications. Requires macOS 13 or later. Quit the previous Orb Todo app before opening Mint Todo. Existing tasks and settings are preserved.
