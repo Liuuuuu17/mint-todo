@@ -289,6 +289,7 @@ struct WidgetView: View {
                 fontLibrary: fontLibrary,
                 reminderSync: reminderSync,
                 onOpacity: onOpacity,
+                onResize: onResize,
                 onImport: { showSettings = false; DispatchQueue.main.async { showImport = true } },
                 onCategory: { showSettings = false; DispatchQueue.main.async { showCategory = true } },
                 onArchive: { showSettings = false; DispatchQueue.main.async { showArchive = true } }

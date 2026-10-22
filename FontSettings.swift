@@ -125,11 +125,14 @@ struct SettingsSheet: View {
     @ObservedObject var fontLibrary: FontLibrary
     @ObservedObject var reminderSync: RemindersSync
     let onOpacity: (Double) -> Void
+    let onResize: (CGSize) -> Void
     let onImport: () -> Void
     let onCategory: () -> Void
     let onArchive: () -> Void
 
     @AppStorage("widgetOpacity") private var opacity = 0.94
+    @AppStorage("widgetWidth") private var widgetWidth = 405.0
+    @AppStorage("widgetHeight") private var widgetHeight = 560.0
     @State private var dropTargeted = false
 
     var body: some View {
@@ -217,6 +220,25 @@ struct SettingsSheet: View {
             AppearanceSettings()
             Divider()
             RemindersSettings(sync: reminderSync)
+            Divider()
+            VStack(alignment: .leading, spacing: 8) {
+                Text("窗口大小").font(.system(size: 12, weight: .medium))
+                HStack {
+                    Text("宽度").frame(width: 52, alignment: .leading)
+                    Slider(value: $widgetWidth, in: 320...900)
+                        .onChange(of: widgetWidth) { value in onResize(CGSize(width: value, height: widgetHeight)) }
+                    Text("\(Int(widgetWidth))").frame(width: 40, alignment: .trailing)
+                }
+                HStack {
+                    Text("高度").frame(width: 52, alignment: .leading)
+                    Slider(value: $widgetHeight, in: 380...900)
+                        .onChange(of: widgetHeight) { value in onResize(CGSize(width: widgetWidth, height: value)) }
+                    Text("\(Int(widgetHeight))").frame(width: 40, alignment: .trailing)
+                }
+                Text("也可以拖动主窗口右下角的 ↘ 来调整。")
+                    .font(.system(size: 10)).foregroundStyle(.secondary)
+            }
+            .font(.system(size: 11))
             Divider()
             HStack {
                 Text("整个窗口透明度").font(.system(size: 12))
