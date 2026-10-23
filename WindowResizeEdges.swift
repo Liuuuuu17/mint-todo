@@ -82,11 +82,11 @@ final class EdgeResizeView: NSView {
         guard let window else { return }
         active = edges(at: convert(event.locationInWindow, from: nil))
         originalFrame = window.frame
-        originalMouse = NSEvent.mouseLocation
+        originalMouse = window.convertPoint(toScreen: event.locationInWindow)
     }
     override func mouseDragged(with event: NSEvent) {
         guard let window, !active.isEmpty else { return }
-        let current = NSEvent.mouseLocation
+        let current = window.convertPoint(toScreen: event.locationInWindow)
         let screen = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? originalFrame
         let next = WindowResizeGeometry.resize(originalFrame,
             delta: NSPoint(x: current.x - originalMouse.x, y: current.y - originalMouse.y),
@@ -105,31 +105,36 @@ struct WindowDragSurface: NSViewRepresentable {
 }
 final class WindowDragView: NSView {
     var click: (() -> Void)?
-    private var origin = NSPoint.zero
-    private var mouse = NSPoint.zero
+    private var original = NSPoint.zero
+    private var start = NSPoint.zero
+    private var last = NSPoint.zero
     private var dragged = false
     override var mouseDownCanMoveWindow: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override func resetCursorRects() { addCursorRect(bounds, cursor: .openHand) }
     override func mouseDown(with event: NSEvent) {
-        origin = window?.frame.origin ?? .zero; mouse = NSEvent.mouseLocation; dragged = false
+        guard let window else { return }
+        original = window.frame.origin
+        start = window.convertPoint(toScreen: event.locationInWindow); last = start; dragged = false
     }
     override func mouseDragged(with event: NSEvent) {
-        let current = NSEvent.mouseLocation
-        let dx = current.x - mouse.x, dy = current.y - mouse.y
+        guard let window else { return }
+        let point = window.convertPoint(toScreen: event.locationInWindow)
+        let dx = point.x - start.x, dy = point.y - start.y
         guard dragged || hypot(dx, dy) > 3 else { return }
-        dragged = true; NSCursor.closedHand.set()
-        window?.setFrameOrigin(NSPoint(x: origin.x + dx, y: origin.y + dy))
+        dragged = true; last = point; NSCursor.closedHand.set()
+        window.setFrameOrigin(NSPoint(x: original.x + dx, y: original.y + dy))
     }
     override func mouseUp(with event: NSEvent) {
         NSCursor.openHand.set()
         if !dragged { click?() }
-        else if let window, let screen = NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) }) ?? window.screen {
+        else if let window, let screen = NSScreen.screens.first(where: { $0.frame.contains(last) }) ?? window.screen {
             window.setFrame(WindowDockGeometry.clamped(window.frame, to: screen.visibleFrame), display: true)
         }
         dragged = false
     }
 }
+
 enum WindowDockGeometry {
     static func clamped(_ frame: NSRect, to screen: NSRect) -> NSRect {
         NSRect(x: min(max(frame.minX, screen.minX), max(screen.minX, screen.maxX - frame.width)),
