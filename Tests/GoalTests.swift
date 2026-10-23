@@ -187,6 +187,25 @@ final class MockAPIProtocol: URLProtocol {
         MockAPIProtocol.response = { _ in throw URLError(.cancelled) }
         do { _ = try await client.complete(config: settings, key: "test-secret", system: "s", user: "u"); throw PlanFailure("TEST FAILED: cancel") }
         catch is CancellationError { checks += 1 }
+        for base in ["https://example.com", "https://example.com/v1/", "https://example.com/v1/chat/completions"] {
+            try check(try AIConfiguration.modelsEndpoint(base).absoluteString == "https://example.com/v1/models", "models URL normalization")
+        }
+        try check(try AIConfiguration.modelsEndpoint("https://example.com/proxy/v1").path == "/proxy/v1/models", "models custom prefix")
+        MockAPIProtocol.response = { request in
+            guard request.httpMethod == "GET", request.url?.path == "/v1/models", request.httpBody == nil,
+                  request.value(forHTTPHeaderField: "Authorization") == "Bearer test-secret" else { throw PlanFailure("wrong models request") }
+            return (200, Data(#"{"data":[{"id":"model-b"},{"id":"model-a"},{"id":"model-a"},{"id":" "}]}"#.utf8))
+        }
+        let models = try await client.models(baseURL: "https://example.test/v1", key: "test-secret")
+        try check(models == ["model-a", "model-b"], "models GET authentication, sorting and deduplication")
+        for reply in [#"{"data":[]}"#, #"{"data":[{"id":123}]}"#, "invalid"] {
+            MockAPIProtocol.response = { _ in (200, Data(reply.utf8)) }
+            do { _ = try await client.models(baseURL: "https://example.test", key: "test-secret"); throw PlanFailure("TEST FAILED: invalid model list") }
+            catch { try check(!error.localizedDescription.hasPrefix("TEST FAILED"), "empty/malformed model list rejected") }
+        }
+        MockAPIProtocol.response = { _ in (401, Data("test-secret".utf8)) }
+        do { _ = try await client.models(baseURL: "https://example.test", key: "test-secret"); throw PlanFailure("TEST FAILED: models auth") }
+        catch { try check(!error.localizedDescription.contains("test-secret") && !error.localizedDescription.hasPrefix("TEST FAILED"), "models auth error redacted") }
         let keychain = AIKeychain(service: "com.minttodo.tests.\(UUID())")
         defer { try? keychain.clear() }
         try keychain.save("temporary-test-secret")
