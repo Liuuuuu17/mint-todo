@@ -142,6 +142,7 @@ struct SettingsSheet: View {
     @AppStorage("widgetWidth") private var widgetWidth = 405.0
     @AppStorage("widgetHeight") private var widgetHeight = 560.0
     @State private var dropTargeted = false
+    @State private var showAISettings = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -232,6 +233,8 @@ struct SettingsSheet: View {
             }
 
             Divider()
+            Button("AI 设置与计划提示词…") { showAISettings = true }
+            Divider()
             AppearanceSettings()
             Divider()
             RemindersSettings(sync: reminderSync)
@@ -280,6 +283,7 @@ struct SettingsSheet: View {
         }
         .padding(24)
         .frame(width: 440, height: 570)
+        .sheet(isPresented: $showAISettings) { AISettingsView() }
     }
 
     private func chooseFontFiles() {

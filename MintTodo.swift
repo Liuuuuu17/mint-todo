@@ -30,6 +30,7 @@ struct Todo: Identifiable, Codable, Equatable {
     var status: TaskStatus = .todo
     var createdAt: Date = Date()
     var dueAt: Date? = nil
+    var goalTaskID: UUID? = nil
 }
 
 struct SavedData: Codable {
@@ -47,8 +48,8 @@ struct SavedData: Codable {
     private var lastModified: Date?
     private var watchTimer: Timer?
 
-    init() {
-        let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    init(folder override: URL? = nil, watch: Bool = true) {
+        let folder = override ?? ProcessInfo.processInfo.environment["MINTTODO_DATA_DIR"].map { URL(fileURLWithPath: $0) } ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("OrbTodo", isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         fileURL = folder.appendingPathComponent("tasks.json")
@@ -59,19 +60,20 @@ struct SavedData: Codable {
         }
         if !FileManager.default.fileExists(atPath: fileURL.path) { save() }
         lastModified = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-        watchTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+        if watch { watchTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.reloadIfChanged() }
-        }
+        } }
     }
 
-    private func save() {
+    @discardableResult private func save() -> Bool {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        guard let data = try? encoder.encode(SavedData(categories: categories, tasks: tasks)) else { return }
-        try? data.write(to: fileURL, options: .atomic)
+        guard let data = try? encoder.encode(SavedData(categories: categories, tasks: tasks)) else { return false }
+        do { try data.write(to: fileURL, options: .atomic) } catch { return false }
         lastModified = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
         onChange?()
+        return true
     }
 
     private static func decode(_ data: Data) -> SavedData? {
@@ -92,7 +94,9 @@ struct SavedData: Codable {
         onChange?()
     }
 
-    func applyReminderChanges(updates: [Todo], deletedIDs: Set<UUID>) {
+    @discardableResult func applyReminderChanges(updates: [Todo], deletedIDs: Set<UUID>) -> Bool {
+        let previousTasks = tasks
+        let previousCategories = categories
         var changed = false
         for updated in updates {
             if let index = tasks.firstIndex(where: { $0.id == updated.id }) {
@@ -111,6 +115,33 @@ struct SavedData: Codable {
             tasks.removeAll { deletedIDs.contains($0.id) }
             if tasks.count != oldCount { changed = true }
         }
+        if changed && !save() {
+            tasks = previousTasks
+            categories = previousCategories
+            return false
+        }
+        return true
+    }
+
+    func ensureGoalTodo(_ task: GoalTask, existing: UUID?, today: Bool) -> UUID? {
+        if let saved = tasks.first(where: { $0.goalTaskID == task.id }) { return saved.id }
+        let oldTasks = tasks; let oldCategories = categories
+        let id: UUID
+        if let existing, let i = tasks.firstIndex(where: { $0.id == existing && $0.goalTaskID == nil }) {
+            tasks[i].goalTaskID = task.id; id = existing
+        } else {
+            let category = today ? "今日" : "目标任务"
+            if !categories.contains(category) { categories.append(category) }
+            var todo = Todo(title: task.title, category: category, status: task.state.todoStatus ?? .todo,
+                            dueAt: today ? Calendar.current.date(bySettingHour: 23, minute: 59, second: 0, of: Date()) : PlanDate.localDeadline(task.dueDate))
+            todo.goalTaskID = task.id; tasks.append(todo); id = todo.id
+        }
+        guard save() else { tasks = oldTasks; categories = oldCategories; return nil }
+        return id
+    }
+    func unlinkGoalTask(_ id: UUID) {
+        var changed = false
+        for i in tasks.indices where tasks[i].goalTaskID == id { tasks[i].goalTaskID = nil; changed = true }
         if changed { save() }
     }
 
@@ -230,6 +261,7 @@ struct WidgetView: View {
     @ObservedObject var fontLibrary: FontLibrary
     @ObservedObject var reminderSync: RemindersSync
     let onCollapse: () -> Void
+    let onGoals: () -> Void
     let onPin: (Bool) -> Void
     let onOpacity: (Double) -> Void
     let onResize: (CGSize) -> Void
@@ -303,6 +335,8 @@ struct WidgetView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
+            Button(action: onGoals) { Label("我的目标", systemImage: "flag") .font(.system(size: 12, weight: .medium)) }
+                .help("打开目标规划窗口")
             Spacer()
             Button { pinned.toggle(); onPin(pinned) } label: {
                 Image(systemName: pinned ? "pin.fill" : "pin")
@@ -690,14 +724,21 @@ final class FloatingPanel: NSPanel {
     private let store = TaskStore()
     private let fontLibrary = FontLibrary()
     private var reminders: RemindersSync!
+    private lazy var goals = GoalStore(daily: store)
+    private var goalsWindow: NSWindow?
     private var widget: FloatingPanel!
     private var orb: FloatingPanel!
     private var statusItem: NSStatusItem!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        reminders = RemindersSync(tasks: store)
-        store.onChange = { [weak self] in self?.reminders.scheduleSync() }
+        reminders = RemindersSync(tasks: store, allowSystemAccess: ProcessInfo.processInfo.environment["MINTTODO_TEST_MODE"] != "1")
+        _ = goals
+        store.onChange = { [weak self] in
+            self?.reminders.scheduleSync()
+            self?.goals.reconcileTodos()
+        }
+        goals.reconcileTodos()
         makeWindows()
         makeMenuBar()
         showWidget()
@@ -720,6 +761,7 @@ final class FloatingPanel: NSPanel {
             fontLibrary: fontLibrary,
             reminderSync: reminders,
             onCollapse: { [weak self] in self?.showOrb() },
+            onGoals: { [weak self] in self?.showGoals() },
             onPin: { [weak self] value in self?.setPinned(value) },
             onOpacity: { [weak self] value in self?.widget.alphaValue = value
                 UserDefaults.standard.set(value, forKey: "widgetOpacity") },
@@ -775,12 +817,29 @@ final class FloatingPanel: NSPanel {
         let menu = NSMenu()
         menu.addItem(withTitle: "显示待办", action: #selector(showWidgetAction), keyEquivalent: "o").target = self
         menu.addItem(withTitle: "收起为小圆点", action: #selector(showOrbAction), keyEquivalent: "h").target = self
+        menu.addItem(withTitle: "我的目标", action: #selector(showGoals), keyEquivalent: "g").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "复制清单文本", action: #selector(copyList), keyEquivalent: "c").target = self
         menu.addItem(withTitle: "打开数据文件", action: #selector(openDataFile), keyEquivalent: "").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "退出 Mint Todo", action: #selector(quit), keyEquivalent: "q").target = self
         statusItem.menu = menu
+    }
+
+    @objc private func showGoals() {
+        if goalsWindow == nil {
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1120, height: 760),
+                                  styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+            window.title = "Mint Todo · 我的目标"
+            window.minSize = NSSize(width: 960, height: 650)
+            window.isReleasedWhenClosed = false
+            window.contentView = NSHostingView(rootView: GoalsView(store: goals))
+            window.setFrameAutosaveName("MintGoalsWindow")
+            window.center()
+            goalsWindow = window
+        }
+        goalsWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     private func setPinned(_ pinned: Bool) {
