@@ -64,3 +64,7 @@ Whole-goal AI replanning/diffs, automatic rescheduling, dependency editing/graph
 ## Validation limits
 
 Live paid/provider-specific API calls require the user's configuration; HTTP behavior is tested with URLProtocol mocks. Real iCloud propagation and Reminders permission prompts are not exercised. Local EventKit integration is checked only in a disposable QA list. The retained reconciliation path is tested via `applyReminderChanges`. macOS 13/Intel compilation is checked, but runtime QA is on this Apple Silicon Mac. This remains an ad hoc signed preview, not a notarized App Store distribution.
+
+## 2.0.1 model discovery
+
+AI settings supports explicit GET model discovery at the sibling `/models` endpoint (root, `/v1`, prefixed paths and complete Chat Completions URLs normalize consistently). Standard `data[].id` responses are deduplicated and sorted. Empty, malformed, unauthorized, timed out or cancelled responses preserve input and permit manual model entry. A changed URL cannot silently reuse a different saved endpoint’s key for discovery. Fetched IDs may include non-chat models; connection testing remains available. API contract: https://developers.openai.com/api/reference/resources/models/methods/list. No real user key is accessed by the automated tests.

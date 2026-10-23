@@ -11,6 +11,7 @@ struct AISettingsView: View {
     @State private var base = AISettings.configuration.baseURL
     @State private var model = AISettings.configuration.model
     @State private var key = ""
+    @State private var models: [String] = []
     @State private var prompt = AISettings.prompt
     @State private var status = ""
     @State private var operation: Task<Void, Never>?
@@ -19,17 +20,30 @@ struct AISettingsView: View {
             HStack { Text("AI 设置").font(.title2.bold()); Spacer(); Button("完成") { dismiss() } }
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("填写你使用的 Chat Completions 兼容服务。只有点击生成、细化或测试连接时才会发送请求。")
+                    Text("填写你使用的 Chat Completions 兼容服务。只有点击拉取模型、生成、细化或测试连接时才会发送请求。")
                         .font(.callout).foregroundStyle(.secondary)
-                    TextField("API Base URL（HTTPS）", text: $base)
+                    TextField("API Base URL（HTTPS）", text: $base).disabled(operation != nil)
                     Text( (try? AIConfiguration.endpoint(base).absoluteString) ?? "示例路径：服务根地址 → /v1/chat/completions；/v1 → /v1/chat/completions")
                         .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                    TextField("模型名称", text: $model)
-                    SecureField("新的 API Key（留空保留已保存的密钥）", text: $key)
+                    SecureField("新的 API Key（留空保留已保存的密钥）", text: $key).disabled(operation != nil)
                     HStack {
-                        Button("保存设置与密钥") { save() }
+                        Button("拉取模型") { fetchModels() }.disabled(operation != nil || base.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        if operation != nil { ProgressView().controlSize(.small) }
+                        Text("填写 URL 和 Key 后获取可选模型").font(.caption).foregroundStyle(.secondary)
+                    }
+                    if !models.isEmpty {
+                        Picker("选择模型", selection: $model) {
+                            if !models.contains(model) { Text(model.isEmpty ? "请选择模型" : "\(model)（手动输入）").tag(model) }
+                            ForEach(models, id: \.self) { Text($0).tag($0) }
+                        }.disabled(operation != nil)
+                    }
+                    TextField("模型名称（也可手动填写）", text: $model).disabled(operation != nil)
+                    Text("拉取结果可能包含非聊天模型；选好后可测试连接。服务不支持列表时可手动填写。")
+                        .font(.caption).foregroundStyle(.secondary)
+                    HStack {
+                        Button("保存设置与密钥") { save() }.disabled(operation != nil)
                         Button("测试连接") { test() }.disabled(operation != nil)
-                        Button("清除密钥", role: .destructive) { do { try AIKeychain().clear(); key = ""; status = "密钥已从钥匙串清除。" } catch { status = error.localizedDescription } }
+                        Button("清除密钥", role: .destructive) { do { try AIKeychain().clear(); key = ""; status = "密钥已从钥匙串清除。" } catch { status = error.localizedDescription } }.disabled(operation != nil)
                         if operation != nil { Button("取消") { operation?.cancel() } }
                     }
                     Text(status).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
@@ -42,6 +56,33 @@ struct AISettingsView: View {
             }
         }.padding(24).frame(width: 660, height: 600)
         .onDisappear { operation?.cancel() }
+        .onChange(of: base) { _ in models = [] }
+        .onChange(of: key) { _ in models = [] }
+    }
+    private func fetchModels() {
+        let requestBase = base
+        let requestKey: String?
+        do {
+            _ = try AIConfiguration.modelsEndpoint(requestBase)
+            if !key.isEmpty { requestKey = key }
+            else {
+                guard try AIConfiguration.endpoint(requestBase) == AIConfiguration.endpoint(AISettings.configuration.baseURL) else {
+                    throw PlanFailure("服务地址已更改，请填写该地址对应的 API Key 后再拉取。")
+                }
+                requestKey = try AIKeychain().read()
+            }
+        } catch { status = error.localizedDescription; return }
+        models = []
+        status = "正在拉取模型…"
+        operation = Task { @MainActor in
+            defer { operation = nil }
+            do {
+                models = try await AIClient().models(baseURL: requestBase, key: requestKey)
+                if model.isEmpty { model = models[0] }
+                status = "已获取 \(models.count) 个模型。选择后点“保存设置与密钥”。"
+            } catch is CancellationError { status = "已取消拉取，输入内容已保留。" }
+            catch { status = error.localizedDescription }
+        }
     }
     @discardableResult private func save() -> Bool {
         do {

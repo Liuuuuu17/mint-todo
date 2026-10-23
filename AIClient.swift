@@ -51,6 +51,13 @@ struct AIConfiguration {
         guard let url = components.url else { throw PlanFailure("API 地址无法转换为请求 URL。") }
         return url
     }
+    static func modelsEndpoint(_ base: String) throws -> URL {
+        let chat = try endpoint(base)
+        var components = URLComponents(url: chat, resolvingAgainstBaseURL: false)!
+        components.path = String(components.path.dropLast("/chat/completions".count)) + "/models"
+        guard let url = components.url else { throw PlanFailure("模型列表地址无效。") }
+        return url
+    }
 }
 // Reject redirects so Authorization can never follow a provider redirect to another host.
 final class NoAIRedirects: NSObject, URLSessionTaskDelegate {
@@ -73,6 +80,36 @@ struct AIClient {
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         request.httpBody = try JSONSerialization.data(withJSONObject: ["model": config.model, "stream": false,
             "messages": [["role": "system", "content": system], ["role": "user", "content": user]]])
+        let data = try await responseData(for: request)
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let choices = object["choices"] as? [[String: Any]], let choice = choices.first,
+              let message = choice["message"] as? [String: Any] else { throw PlanFailure("服务返回非标准响应，需要兼容 Chat Completions 的 choices/message 结构。") }
+        if choice["finish_reason"] as? String == "length" { throw PlanFailure("输出被截断，计划未保存。请缩小范围或在服务端增加输出额度后重试。") }
+        guard let text = message["content"] as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw PlanFailure("模型返回空内容或不支持的内容格式，请重试。") }
+        return text
+    }
+    func models(baseURL: String, key: String?) async throws -> [String] {
+        guard let key, !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw PlanFailure("请先填写 API Key，或使用当前地址已保存的密钥。")
+        }
+        var request = URLRequest(url: try AIConfiguration.modelsEndpoint(baseURL))
+        request.httpMethod = "GET"; request.timeoutInterval = 30
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        let data = try await responseData(for: request)
+        struct ModelList: Decodable {
+            struct Model: Decodable { let id: String }
+            let data: [Model]
+        }
+        guard let response = try? JSONDecoder().decode(ModelList.self, from: data) else {
+            throw PlanFailure("模型列表格式不兼容，需要 data 数组和 id 字段；仍可手动填写模型名称。")
+        }
+        let models = Set(response.data.map(\.id).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }).sorted()
+        guard !models.isEmpty else { throw PlanFailure("服务返回的模型列表为空；仍可手动填写模型名称。") }
+        return models
+    }
+
+    private func responseData(for request: URLRequest) async throws -> Data {
         let data: Data; let response: URLResponse
         do { (data, response) = try await session.data(for: request) }
         catch is CancellationError { throw CancellationError() }
@@ -85,16 +122,12 @@ struct AIClient {
         switch http.statusCode {
         case 200...299: break
         case 401, 403: throw PlanFailure("鉴权失败，请检查 API Key 和该模型的访问权限。")
-        case 404: throw PlanFailure("接口或模型不存在，请检查请求地址及模型名称。")
+        case 404: throw PlanFailure("接口或模型不存在，请检查请求地址；若服务不支持模型列表，可手动填写模型名称。")
         case 429: throw PlanFailure("服务限流或额度不足，请稍后重试。")
         default: throw PlanFailure("API 请求失败（HTTP \(http.statusCode)），请检查服务配置后重试。")
         }
         guard data.count <= 10_000_000 else { throw PlanFailure("API 响应超过 10 MB，请缩小请求范围。") }
-        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let choices = object["choices"] as? [[String: Any]], let choice = choices.first,
-              let message = choice["message"] as? [String: Any] else { throw PlanFailure("服务返回非标准响应，需要兼容 Chat Completions 的 choices/message 结构。") }
-        if choice["finish_reason"] as? String == "length" { throw PlanFailure("输出被截断，计划未保存。请缩小范围或在服务端增加输出额度后重试。") }
-        guard let text = message["content"] as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw PlanFailure("模型返回空内容或不支持的内容格式，请重试。") }
-        return text
+        return data
     }
+
 }
