@@ -33,6 +33,7 @@ final class MockAPIProtocol: URLProtocol {
             _ = NSApplication.shared
             try schemaTests()
             try storageTests()
+            try revisionTests()
             try await apiTests()
             print("PASS: \(checks) checks — schema, transactions, backup, linkage, progress, Markdown, API and Keychain")
         } catch { fputs("\(error.localizedDescription)\n", stderr); exit(1) }
@@ -150,6 +151,47 @@ final class MockAPIProtocol: URLProtocol {
         // Real EventKit is deliberately disabled in these tests.
         let reminders = RemindersSync(tasks: daily, allowSystemAccess: false, preferences: UserDefaults(suiteName: "com.minttodo.unit.\(UUID())")!)
         try check(!reminders.enabled && !reminders.hasAccess, "isolated reminder test mode")
+    }
+    @MainActor static func revisionTests() throws {
+        var original = try PlanCodec.parse(sample).goal
+        let dailyID = UUID()
+        original.phases[0].tasks[0].state = .completed
+        original.phases[0].tasks[0].completedAt = Date(timeIntervalSince1970: 100)
+        original.phases[0].tasks[0].linkedTodoID = dailyID
+        original.phases[0].tasks[0].outcomes = [OutcomeRecord(text: "已完成成果")]
+        var proposal = try PlanCodec.parse(PlanCodec.export(original)).goal
+        let oldTaskID = original.phases[0].tasks[0].id
+        proposal.title = "调整后的计划"
+        proposal.phases[0].tasks[0].title = "更明确的任务标题"
+        proposal.phases[0].tasks[0].state = .notStarted
+        proposal.phases[0].tasks[1].dependencies = [oldTaskID]
+        var added = proposal.phases[0].tasks[0]
+        added.id = UUID(); added.title = "新增步骤"; added.state = .completed
+        proposal.phases[0].tasks.append(added)
+        let revised = try PlanRevision.prepare(original: original, proposal: proposal)
+        try check(revised.goal.id == original.id && revised.goal.title == proposal.title, "revision updates existing plan identity")
+        let retained = revised.goal.phases[0].tasks[0]
+        try check(retained.id == oldTaskID && retained.linkedTodoID == dailyID, "revision preserves stable daily association")
+        try check(retained.state == .completed && retained.completedAt == original.phases[0].tasks[0].completedAt, "revision preserves completed state")
+        try check(retained.outcomes == original.phases[0].tasks[0].outcomes, "revision preserves outcomes")
+        try check(revised.added == 1 && revised.removed.isEmpty, "revision change counts")
+        try check(revised.goal.phases[0].tasks[1].dependencies == [oldTaskID], "revision remaps dependencies")
+        try check(revised.goal.phases[0].tasks[2].state == .notStarted && revised.goal.phases[0].tasks[2].linkedTodoID == nil, "AI cannot invent new completed or linked tasks")
+        var removed = proposal; removed.phases[0].tasks.removeFirst(); removed.phases[0].tasks[0].dependencies = []
+        try check(try PlanRevision.prepare(original: original, proposal: removed).removed == [original.phases[0].tasks[0].title], "revision lists removed tasks explicitly")
+        let fallback = try PlanRevision.prepare(original: original, proposal: PlanCodec.parse(sample).goal)
+        try check(fallback.goal.phases[0].tasks[0].id == oldTaskID, "unique title fallback when AI omits IDs")
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("MintRevision-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let daily = TaskStore(folder: folder, watch: false)
+        let store = GoalStore(daily: daily, folder: folder)
+        _ = store.insert(original)
+        let snapshot = store.goals[0]
+        var changed = snapshot; changed.notes = "其他窗口已修改"
+        try check(store.save(changed), "concurrent update fixture")
+        let before = try Data(contentsOf: store.fileURL)
+        try check(!store.save(snapshot, expected: snapshot), "stale AI preview rejected")
+        try check(try Data(contentsOf: store.fileURL) == before, "stale preview never overwrites recent progress")
     }
     static func apiReply(_ content: String, reason: String = "stop") throws -> Data {
         try JSONSerialization.data(withJSONObject: ["choices": [["finish_reason": reason, "message": ["content": content]]]])
