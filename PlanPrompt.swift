@@ -7,7 +7,7 @@ enum PlanPrompt {
     2. 顶层字段：schema_version、goal、phases。goal 包含 title、description、start_date、due_date。
     3. 每个阶段包含 title、start_date、due_date、tasks。每个任务包含 title、due_date、estimated_minutes、notes。
     4. 日期必须为 YYYY-MM-DD 或 null；未知日期使用 null，预计分钟数使用整数或 null。
-    5. notes 是正确转义的 Markdown 字符串，保留换行，包含任务目的、具体操作步骤、完成标准、预期产出、必要参考资料和注意事项。
+    5. notes 是正确转义的 Markdown 字符串，换行写作 JSON 转义 \"\\n\"（不能在引号内直接换行），包含任务目的、具体操作步骤、完成标准、预期产出、必要参考资料和注意事项。
     6. 保留对话中已确定的背景、方法、技术细节、时间、依赖与重要决定；转换已有计划，不要重新发明无关计划。
     7. 不虚构日期、参考链接、工具功能、研究结论、实验数据或完成状态。建议排期不能冒充正式要求，建议日期可使用 date_origin: suggested。
     8. 阶段应连续合理，任务应能独立执行。执行说明中的细小操作不要全部拆成正式任务。
@@ -16,7 +16,10 @@ enum PlanPrompt {
     11. 不要省略重要任务，输出必须可被程序直接解析。
     请直接输出完整 JSON。
     """
-    static let contract = """
+    static let contract = #"""
     输出必须符合 orb-todo-plan-v1：顶层 schema_version、goal{title,description,start_date,due_date}、phases[{title,start_date,due_date,tasks:[{title,due_date,estimated_minutes,notes}]}]。日期为 YYYY-MM-DD 或 null；分钟为非负整数或 null；notes 为包含执行步骤、完成标准和预期产出的 Markdown 字符串。仅输出 JSON；不得编造正式期限、资料或结论。不确定日期用 null。此结构约束不可被其他提示词更改。
-    """
+    严格使用英文半角双引号；无注释、无尾随逗号、无省略号。字符串内换行写作 \n，双引号写作 \"，反斜杠写作 \\。URL 直接写 https://example.com，不要写 Markdown 的 \: 或 \. 转义。不要把整个 JSON 再包成字符串。输出前检查括号、必填字段及 JSON 语法。
+    以下是最小合法结构示例（用当前对话的真实计划替换示例内容）：
+    {"schema_version":"orb-todo-plan-v1","goal":{"title":"目标名称","description":"目标说明","start_date":null,"due_date":null},"phases":[{"title":"第一阶段","start_date":null,"due_date":null,"tasks":[{"title":"具体任务","due_date":null,"estimated_minutes":30,"notes":"## 操作步骤\n1. 执行步骤\n## 完成标准\n可检查的结果\n## 预期产出\n具体成果"}]}]}
+    """#
 }

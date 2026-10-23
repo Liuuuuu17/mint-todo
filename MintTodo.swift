@@ -23,6 +23,19 @@ enum TaskStatus: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+enum RepeatRule: String, Codable, CaseIterable, Identifiable {
+    case once, daily, weekdays, interval
+    var id: String { rawValue }
+    var title: String { switch self { case .once: return "一次性"; case .daily: return "每天"; case .weekdays: return "每个工作日"; case .interval: return "每几天" } }
+    func next(after date: Date, interval: Int, calendar: Calendar = .current) -> Date {
+        var next = calendar.date(byAdding: .day, value: self == .interval ? max(1, interval) : 1, to: date)!
+        if self == .weekdays {
+            while [1, 7].contains(calendar.component(.weekday, from: next)) { next = calendar.date(byAdding: .day, value: 1, to: next)! }
+        }
+        return next
+    }
+}
+
 struct Todo: Identifiable, Codable, Equatable {
     var id: UUID = UUID()
     var title: String
@@ -31,6 +44,16 @@ struct Todo: Identifiable, Codable, Equatable {
     var createdAt: Date = Date()
     var dueAt: Date? = nil
     var goalTaskID: UUID? = nil
+    var completedAt: Date? = nil
+    var repeatRule: RepeatRule? = nil
+    var repeatInterval: Int? = nil
+    var occurrenceAt: Date? = nil
+    var generatedFrom: UUID? = nil
+    var recurrenceSpawnedAt: Date? = nil
+
+    func visibleInTodo(on day: Date = Date(), calendar: Calendar = .current) -> Bool {
+        status == .todo || status == .pending || (status == .completed && completedAt.map { calendar.isDate($0, inSameDayAs: day) } == true)
+    }
 }
 
 struct SavedData: Codable {
@@ -47,6 +70,7 @@ struct SavedData: Codable {
     let fileURL: URL
     private var lastModified: Date?
     private var watchTimer: Timer?
+    private var observedDay = Calendar.current.startOfDay(for: Date())
 
     init(folder override: URL? = nil, watch: Bool = true) {
         let folder = override ?? ProcessInfo.processInfo.environment["MINTTODO_DATA_DIR"].map { URL(fileURLWithPath: $0) } ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -60,9 +84,15 @@ struct SavedData: Codable {
         }
         if !FileManager.default.fileExists(atPath: fileURL.path) { save() }
         lastModified = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+        refreshRecurring()
         if watch { watchTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.reloadIfChanged() }
+            Task { @MainActor in self?.reloadIfChanged(); self?.refreshRecurring(); self?.refreshDay() }
         } }
+    }
+
+    private func refreshDay() {
+        let day = Calendar.current.startOfDay(for: Date())
+        if day != observedDay { observedDay = day; objectWillChange.send() }
     }
 
     @discardableResult private func save() -> Bool {
@@ -98,7 +128,10 @@ struct SavedData: Codable {
         let previousTasks = tasks
         let previousCategories = categories
         var changed = false
-        for updated in updates {
+        for var updated in updates {
+            if updated.status == .completed && updated.completedAt == nil {
+                updated.completedAt = tasks.first(where: { $0.id == updated.id })?.completedAt ?? Date()
+            } else if updated.status != .completed { updated.completedAt = nil }
             if let index = tasks.firstIndex(where: { $0.id == updated.id }) {
                 if tasks[index] != updated { tasks[index] = updated; changed = true }
             } else {
@@ -123,14 +156,14 @@ struct SavedData: Codable {
         return true
     }
 
-    func ensureGoalTodo(_ task: GoalTask, existing: UUID?, today: Bool) -> UUID? {
+    func ensureGoalTodo(_ task: GoalTask, existing: UUID?, today: Bool, category: String = "目标任务") -> UUID? {
         if let saved = tasks.first(where: { $0.goalTaskID == task.id }) { return saved.id }
         let oldTasks = tasks; let oldCategories = categories
         let id: UUID
         if let existing, let i = tasks.firstIndex(where: { $0.id == existing && $0.goalTaskID == nil }) {
-            tasks[i].goalTaskID = task.id; id = existing
+            tasks[i].goalTaskID = task.id; tasks[i].category = category
+            if !categories.contains(category) { categories.append(category) }; id = existing
         } else {
-            let category = today ? "今日" : "目标任务"
             if !categories.contains(category) { categories.append(category) }
             var todo = Todo(title: task.title, category: category, status: task.state.todoStatus ?? .todo,
                             dueAt: today ? Calendar.current.date(bySettingHour: 23, minute: 59, second: 0, of: Date()) : PlanDate.localDeadline(task.dueDate))
@@ -162,21 +195,57 @@ struct SavedData: Codable {
         save()
     }
 
-    func update(_ task: Todo, title: String, category: String, dueAt: Date?) {
-        let clean = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !clean.isEmpty, let index = tasks.firstIndex(where: { $0.id == task.id }) else { return }
-        let group = category.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !categories.contains(group) { categories.append(group) }
-        tasks[index].title = clean
-        tasks[index].category = group
-        tasks[index].dueAt = dueAt
-        save()
+    @discardableResult func saveEdited(_ source: Todo) -> Bool {
+        var task = source
+        task.title = task.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        task.category = task.category.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !task.title.isEmpty else { return false }
+        if task.category.isEmpty { task.category = "收件箱" }
+        let oldTasks = tasks; let oldCategories = categories
+        if let i = tasks.firstIndex(where: { $0.id == task.id }) { tasks[i] = task } else { tasks.append(task) }
+        if !categories.contains(task.category) { categories.append(task.category) }
+        guard save() else { tasks = oldTasks; categories = oldCategories; return false }
+        return true
     }
-
-    func setStatus(_ task: Todo, _ status: TaskStatus) {
-        guard let index = tasks.firstIndex(where: { $0.id == task.id }) else { return }
+    func update(_ task: Todo, title: String, category: String, dueAt: Date?) {
+        var edited = task; edited.title = title; edited.category = category; edited.dueAt = dueAt
+        _ = saveEdited(edited)
+    }
+    func setStatus(_ task: Todo, _ status: TaskStatus, now: Date = Date()) {
+        guard let index = tasks.firstIndex(where: { $0.id == task.id }), tasks[index].status != status else { return }
+        let old = tasks
         tasks[index].status = status
-        save()
+        tasks[index].completedAt = status == .completed ? now : nil
+        if !save() { tasks = old }
+    }
+    // Generate one next occurrence only when its calendar day arrives. Missed days do not create a backlog.
+    func refreshRecurring(now: Date = Date(), calendar: Calendar = .current) {
+        let old = tasks
+        for i in tasks.indices {
+            guard tasks[i].status == .completed, let completed = tasks[i].completedAt,
+                  let rule = tasks[i].repeatRule, rule != .once, tasks[i].recurrenceSpawnedAt == nil else { continue }
+            let base = max(completed, tasks[i].occurrenceAt ?? tasks[i].dueAt ?? completed)
+            let next = rule.next(after: base, interval: tasks[i].repeatInterval ?? 1, calendar: calendar)
+            guard calendar.startOfDay(for: next) <= calendar.startOfDay(for: now) else { continue }
+            var occurrence = calendar.startOfDay(for: now)
+            if rule == .weekdays && [1, 7].contains(calendar.component(.weekday, from: occurrence)) { continue }
+            if let due = tasks[i].dueAt {
+                let time = calendar.dateComponents([.hour, .minute], from: due)
+                occurrence = calendar.date(bySettingHour: time.hour ?? 23, minute: time.minute ?? 59, second: 0, of: occurrence) ?? occurrence
+            }
+            var nextTask = Todo(title: tasks[i].title, category: tasks[i].category, createdAt: now, dueAt: tasks[i].dueAt == nil ? nil : occurrence)
+            nextTask.repeatRule = rule; nextTask.repeatInterval = tasks[i].repeatInterval
+            nextTask.occurrenceAt = occurrence; nextTask.generatedFrom = tasks[i].id
+            tasks[i].recurrenceSpawnedAt = now
+            tasks.append(nextTask)
+        }
+        if tasks != old && !save() { tasks = old }
+    }
+    func groupGoalTasks(_ ids: Set<UUID>, category: String) {
+        let old = tasks; let oldCategories = categories
+        if !categories.contains(category) { categories.append(category) }
+        for i in tasks.indices where tasks[i].goalTaskID.map({ ids.contains($0) }) == true { tasks[i].category = category }
+        if (old != tasks || oldCategories != categories) && !save() { tasks = old; categories = oldCategories }
     }
 
     func delete(_ task: Todo) {
@@ -237,7 +306,7 @@ struct SavedData: Codable {
             }
             line = line.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !line.isEmpty else { continue }
-            tasks.append(Todo(title: line, category: category, status: itemStatus))
+            tasks.append(Todo(title: line, category: category, status: itemStatus, completedAt: itemStatus == .completed ? Date() : nil))
             count += 1
         }
         if count > 0 { save() }
@@ -256,6 +325,12 @@ struct VisualEffect: NSViewRepresentable {
     func updateNSView(_ view: NSVisualEffectView, context: Context) {}
 }
 
+struct TaskEditorRequest: Identifiable {
+    var task: Todo
+    var isNew = false
+    var id: UUID { task.id }
+}
+
 struct WidgetView: View {
     @ObservedObject var store: TaskStore
     @ObservedObject var fontLibrary: FontLibrary
@@ -268,10 +343,12 @@ struct WidgetView: View {
     let onOpacity: (Double) -> Void
     let onResize: (CGSize) -> Void
 
+    @Environment(\.colorScheme) private var systemColorScheme
+    @AppStorage("noteStyle") private var noteStyle = "minimal"
     @State private var showingLongTerm = false
     @State private var input = ""
     @State private var chosenCategory = "工作"
-    @State private var editing: Todo?
+    @State private var editing: TaskEditorRequest?
     @State private var showImport = false
     @State private var showCategory = false
     @State private var showArchive = false
@@ -281,7 +358,6 @@ struct WidgetView: View {
     @AppStorage("widgetHeight") private var widgetHeight = 560.0
     @State private var collapsedGroups: Set<String> = []
     @State private var importedCount: Int?
-    @State private var resizeOrigin: CGSize?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -293,7 +369,7 @@ struct WidgetView: View {
             } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    let visible = store.tasks.filter { $0.status == store.selectedStatus }
+                    let visible = store.tasks.filter { store.selectedStatus == .todo ? $0.visibleInTodo() : $0.status == .completed }
                     if visible.isEmpty {
                         emptyState
                     } else {
@@ -315,10 +391,12 @@ struct WidgetView: View {
         .background {
             AppearanceBackground()
         }
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(.white.opacity(0.7), lineWidth: 1))
-        .shadow(color: .black.opacity(0.16), radius: 25, y: 14)
-        .sheet(item: $editing) { task in EditTaskSheet(store: store, fontLibrary: fontLibrary, task: task) }
+        .environment(\.colorScheme, noteStyle == "retro" ? .light : systemColorScheme)
+        .clipShape(Rectangle())
+        .overlay(Rectangle().stroke(noteStyle == "retro" ? Color(red: 0.44, green: 0.35, blue: 0.25).opacity(0.38) : .black.opacity(0.15), lineWidth: 1))
+        .shadow(color: .black.opacity(0.14), radius: 10, x: 1, y: 5)
+        .overlay { WindowResizeEdges() }
+        .sheet(item: $editing) { request in EditTaskSheet(store: store, fontLibrary: fontLibrary, task: request.task, isNew: request.isNew) }
         .sheet(isPresented: $showImport) { ImportSheet(store: store, importedCount: $importedCount) }
         .sheet(isPresented: $showCategory) { CategorySheet(store: store, chosenCategory: $chosenCategory) }
         .sheet(isPresented: $showArchive) { ArchiveSheet(store: store, fontLibrary: fontLibrary) }
@@ -342,9 +420,11 @@ struct WidgetView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Button(action: onGoals) { Label("我的目标", systemImage: "flag") .font(.system(size: 12, weight: .medium)) }
-                .help("打开目标规划窗口")
-            Spacer()
+            Text(noteStyle == "retro" ? "MINT / NOTES" : "MINT TODO")
+                .font(.system(size: 11, weight: .semibold, design: .monospaced)).tracking(2)
+                .overlay { WindowDragSurface(click: onGoals) }
+                .help("拖动移动便签，点击打开目标规划")
+            Spacer().frame(maxHeight: .infinity).background { WindowDragSurface() }
             Button { pinned.toggle(); onPin(pinned) } label: {
                 Image(systemName: pinned ? "pin.fill" : "pin")
                     .font(.system(size: 13))
@@ -362,36 +442,16 @@ struct WidgetView: View {
         .frame(height: 48)
     }
 
-    private var resizeHandle: some View {
-        Text("↘")
-            .font(.system(size: 15, weight: .medium))
-            .foregroundStyle(Color(red: 0.38, green: 0.41, blue: 0.55))
-            .frame(width: 24, height: 24)
-            .background(Circle().fill(.white.opacity(0.8)))
-            .contentShape(Rectangle())
-            .help("拖动调整窗口大小")
-            .gesture(DragGesture(minimumDistance: 2)
-                .onChanged { value in
-                    if resizeOrigin == nil {
-                        resizeOrigin = CGSize(width: widgetWidth, height: widgetHeight)
-                    }
-                    guard let origin = resizeOrigin else { return }
-                    onResize(CGSize(width: origin.width + value.translation.width,
-                                    height: origin.height + value.translation.height))
-                }
-                .onEnded { _ in resizeOrigin = nil })
-    }
-
     private var statusBar: some View {
         HStack(spacing: 3) {
-            ForEach([TaskStatus.todo, .pending]) { status in
+            ForEach([TaskStatus.todo, .completed]) { status in
                 Button {
                     withAnimation(.easeInOut(duration: 0.18)) { showingLongTerm = false; store.selectedStatus = status }
                 } label: {
                     HStack(spacing: 4) {
                         Text(status.title)
-                        let count = store.tasks.filter { $0.status == status }.count
-                        if count > 0 { Text("\(count)").font(.system(size: 10, weight: .bold)).opacity(0.65) }
+                        let count = store.tasks.filter { status == .todo ? $0.status == .todo || $0.status == .pending : $0.status == .completed }.count
+                        if count > 0 && status != .completed { Text("\(count)").font(.system(size: 10, weight: .bold)).opacity(0.65) }
                     }
                     .font(fontLibrary.font(12, weight: !showingLongTerm && store.selectedStatus == status ? .semibold : .medium))
                     .foregroundStyle(!showingLongTerm && store.selectedStatus == status ? Color.primary : Color.secondary)
@@ -467,11 +527,11 @@ struct WidgetView: View {
             } label: {
                 Image(systemName: task.status == .completed ? "checkmark.square.fill" : "square")
                     .font(.system(size: 18, weight: .light))
-                    .foregroundStyle(task.status == .completed ? Color(red: 0.43, green: 0.5, blue: 0.83) : Color.secondary.opacity(0.65))
+                    .foregroundStyle(task.status == .completed ? Color.primary.opacity(0.75) : Color.secondary.opacity(0.65))
             }
             .buttonStyle(.plain)
             .help(task.status == .completed ? "恢复为待办" : "标记完成")
-            Button { editing = task } label: {
+            Button { editing = TaskEditorRequest(task: task) } label: {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(task.title)
                         .font(fontLibrary.font(13.5, monospaced: true))
@@ -489,7 +549,7 @@ struct WidgetView: View {
             .buttonStyle(.plain)
             .help("编辑任务与截止时间")
             Menu {
-                Button("编辑") { editing = task }
+                Button("编辑") { editing = TaskEditorRequest(task: task) }
                 Divider()
                 ForEach(TaskStatus.allCases) { status in
                     Button(status.title, systemImage: status.symbol) { store.setStatus(task, status) }
@@ -503,11 +563,18 @@ struct WidgetView: View {
                     .frame(width: 22, height: 20)
             }
             .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
             .fixedSize()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.leading, 3)
-        .padding(.vertical, 3)
+        .padding(.vertical, 5)
+        .overlay(alignment: .bottom) {
+            if noteStyle == "retro" {
+                Rectangle().fill(Color(red: 0.40, green: 0.33, blue: 0.25).opacity(0.20))
+                    .frame(height: 0.5).padding(.leading, 29)
+            }
+        }
     }
 
     private var bottomBar: some View {
@@ -519,28 +586,18 @@ struct WidgetView: View {
                 Divider()
                 Button("新建分组…") { showCategory = true }
             } label: {
-                HStack(spacing: 4) {
-                    Text(chosenCategory).lineLimit(1)
-                    Image(systemName: "chevron.up").font(.system(size: 9, weight: .bold))
-                }
-                .font(fontLibrary.font(11, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: 72)
+                Image(systemName: "folder")
+                    .font(.system(size: 14)).foregroundStyle(.secondary)
+                    .frame(width: 24, height: 24)
             }
             .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .help("选择分组：\(chosenCategory)")
             .fixedSize()
             TextField("添加新待办…", text: $input)
                 .font(fontLibrary.font(13, monospaced: true))
                 .textFieldStyle(.plain)
                 .onSubmit(addInput)
-            Button(action: addInput) {
-                Image(systemName: "plus")
-                    .font(.system(size: 16, weight: .medium))
-                    .frame(width: 24, height: 24)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(Color(red: 0.37, green: 0.43, blue: 0.77))
-            .help("添加待办")
         }
         .padding(.horizontal, 12)
         .frame(height: 43)
@@ -548,15 +605,12 @@ struct WidgetView: View {
         .padding(.horizontal, 20)
         .padding(.bottom, 20)
         .padding(.top, 8)
-        .overlay(alignment: .bottomTrailing) {
-            resizeHandle
-                .padding(.trailing, 7)
-                .padding(.bottom, 4)
-        }
     }
 
     private func addInput() {
-        store.add(input, category: chosenCategory)
+        let clean = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        editing = TaskEditorRequest(task: Todo(title: clean, category: store.categories.contains(chosenCategory) ? chosenCategory : store.categories.first ?? "收件箱"), isNew: true)
         input = ""
         store.selectedStatus = .todo
     }
@@ -571,11 +625,18 @@ struct EditTaskSheet: View {
     @State private var category: String
     @State private var hasDueDate: Bool
     @State private var dueAt: Date
+    let isNew: Bool
+    @State private var repeatRule: RepeatRule
+    @State private var repeatInterval: Int
+    @State private var saveError: String?
 
-    init(store: TaskStore, fontLibrary: FontLibrary, task: Todo) {
+    init(store: TaskStore, fontLibrary: FontLibrary, task: Todo, isNew: Bool = false) {
         self.store = store
         self.fontLibrary = fontLibrary
         self.task = task
+        self.isNew = isNew
+        _repeatRule = State(initialValue: task.repeatRule ?? .once)
+        _repeatInterval = State(initialValue: task.repeatInterval ?? 2)
         _title = State(initialValue: task.title)
         _category = State(initialValue: task.category)
         _hasDueDate = State(initialValue: task.dueAt != nil)
@@ -584,7 +645,7 @@ struct EditTaskSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("编辑待办").font(fontLibrary.font(20, weight: .bold))
+            Text(isNew ? "新建待办" : "编辑待办").font(fontLibrary.font(20, weight: .bold))
             TextField("待办内容", text: $title)
                 .font(fontLibrary.font(14))
             HStack {
@@ -598,11 +659,24 @@ struct EditTaskSheet: View {
                 DatePicker("截止时间", selection: $dueAt, displayedComponents: [.date, .hourAndMinute])
                     .datePickerStyle(.compact)
             }
+            Picker("重复", selection: $repeatRule) {
+                ForEach(RepeatRule.allCases) { Text($0.title).tag($0) }
+            }
+            if repeatRule == .interval { Stepper("每 \(repeatInterval) 天", value: $repeatInterval, in: 1...365) }
+            if repeatRule != .once { Text("完成后，下一次到期当天自动加入待办。工作日为周一至周五。")
+                .font(.system(size: 11)).foregroundStyle(.secondary) }
+            if let saveError { Text(saveError).foregroundStyle(.red).font(.caption) }
             HStack {
-                Button("删除", role: .destructive) { store.delete(task); dismiss() }
+                if !isNew { Button("删除", role: .destructive) { store.delete(task); dismiss() } }
                 Spacer()
                 Button("取消") { dismiss() }
-                Button("保存") { store.update(task, title: title, category: category, dueAt: hasDueDate ? dueAt : nil); dismiss() }
+                Button(isNew ? "创建" : "保存") {
+                    var edited = store.tasks.first(where: { $0.id == task.id }) ?? task
+                    edited.title = title; edited.category = category; edited.dueAt = hasDueDate ? dueAt : nil
+                    edited.repeatRule = repeatRule; edited.repeatInterval = repeatInterval
+                    edited.occurrenceAt = hasDueDate ? dueAt : Date()
+                    if store.saveEdited(edited) { dismiss() } else { saveError = "保存失败，请检查磁盘空间后重试。" }
+                }
                     .keyboardShortcut(.defaultAction)
                     .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
@@ -795,19 +869,12 @@ final class FloatingPanel: NSPanel {
         NotificationCenter.default.addObserver(self, selector: #selector(windowMoved), name: NSWindow.didMoveNotification, object: widget)
         NotificationCenter.default.addObserver(self, selector: #selector(windowResized), name: NSWindow.didResizeNotification, object: widget)
 
-        orb = FloatingPanel(contentRect: NSRect(x: screen.maxX - 42, y: screen.maxY - 42, width: 26, height: 26), styleMask: [.borderless], backing: .buffered, defer: false)
+        orb = FloatingPanel(contentRect: NSRect(x: screen.maxX - 64, y: screen.minY + 12, width: CollapsedOrbView.hitSize, height: CollapsedOrbView.hitSize), styleMask: [.borderless], backing: .buffered, defer: false)
         orb.isOpaque = false
         orb.backgroundColor = .clear
         orb.hasShadow = false
         WindowPolicy.apply(to: orb, pinned: true)
-        orb.contentView = NSHostingView(rootView: Button { [weak self] in self?.showWidget() } label: {
-            Circle()
-                .fill(Color(red: 0.46, green: 0.48, blue: 0.64).opacity(0.48))
-                .overlay(Circle().stroke(.white.opacity(0.7), lineWidth: 1))
-                .frame(width: 15, height: 15)
-                .frame(width: 26, height: 26)
-                .contentShape(Rectangle())
-        }.buttonStyle(.plain).help("展开 Mint Todo"))
+        orb.contentView = NSHostingView(rootView: CollapsedOrbView { [weak self] in self?.showWidget() })
     }
 
     @objc private func windowMoved() {
@@ -870,6 +937,10 @@ final class FloatingPanel: NSPanel {
     }
 
     private func showWidget() {
+        if orb.isVisible {
+            let screen = orb.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? widget.frame
+            widget.setFrame(WindowDockGeometry.expanded(from: orb.frame, size: widget.frame.size, screen: screen), display: true)
+        }
         orb.orderOut(nil)
         setPinned(UserDefaults.standard.object(forKey: "widgetPinned") as? Bool != false)
         widget.makeKeyAndOrderFront(nil)
@@ -878,8 +949,7 @@ final class FloatingPanel: NSPanel {
     }
     private func showOrb() {
         let screen = widget.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? widget.frame
-        let point = NSPoint(x: min(max(widget.frame.maxX - 28, screen.minX), screen.maxX - 26),
-                            y: min(max(widget.frame.maxY - 28, screen.minY), screen.maxY - 26))
+        let point = WindowDockGeometry.collapsed(from: widget.frame, screen: screen, size: CollapsedOrbView.hitSize)
         orb.setFrameOrigin(point)
         widget.orderOut(nil)
         orb.orderFrontRegardless()

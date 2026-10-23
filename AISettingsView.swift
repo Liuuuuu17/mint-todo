@@ -4,7 +4,7 @@ import SwiftUI
 enum AISettings {
     static var configuration: AIConfiguration { AIConfiguration(baseURL: UserDefaults.standard.string(forKey: "aiBaseURL") ?? "", model: UserDefaults.standard.string(forKey: "aiModel") ?? "") }
     static var prompt: String { UserDefaults.standard.string(forKey: "aiPlanPrompt") ?? PlanPrompt.standard }
-    static func copyPrompt() { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(prompt, forType: .string) }
+    static func copyPrompt() { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(prompt + "\n\n" + PlanPrompt.contract, forType: .string) }
 }
 struct AISettingsView: View {
     @Environment(\.dismiss) private var dismiss
@@ -48,7 +48,7 @@ struct AISettingsView: View {
                     }
                     Text(status).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
                     Divider()
-                    HStack { Text("计划提示词").font(.headline); Spacer(); Button("复制") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(prompt, forType: .string) }; Button("保存提示词") { UserDefaults.standard.set(prompt, forKey: "aiPlanPrompt"); status = "提示词已保存。" }; Button("恢复默认") { prompt = PlanPrompt.standard } }
+                    HStack { Text("计划提示词").font(.headline); Spacer(); Button("复制") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(prompt + "\n\n" + PlanPrompt.contract, forType: .string) }; Button("保存提示词") { UserDefaults.standard.set(prompt, forKey: "aiPlanPrompt"); status = "提示词已保存。" }; Button("恢复默认") { prompt = PlanPrompt.standard } }
                     TextEditor(text: $prompt).font(.system(size: 12, design: .monospaced)).frame(height: 230).border(.secondary.opacity(0.15))
                     Text("自定义提示词不会修改导入协议；API Key 只保存在 macOS 钥匙串。")
                         .font(.caption).foregroundStyle(.secondary)

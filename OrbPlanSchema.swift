@@ -55,14 +55,8 @@ struct ParsedPlan {
 enum PlanCodec {
     static func parse(_ text: String) throws -> ParsedPlan {
         guard text.utf8.count <= 10_000_000 else { throw PlanFailure("计划超过 10 MB，请分成较小的计划。") }
-        var input = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if input.hasPrefix("```") {
-            var lines = input.components(separatedBy: .newlines)
-            guard ["```", "```json", "```JSON"].contains(lines.first ?? ""), lines.last == "```" else {
-                throw PlanFailure("代码块包装不完整。请只粘贴 JSON 或完整的 ```json 代码块。")
-            }
-            lines.removeFirst(); lines.removeLast(); input = lines.joined(separator: "\n")
-        }
+        let prepared = try prepare(text)
+        let input = prepared.text
         let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
         let dto: OrbPlan
         do { dto = try decoder.decode(OrbPlan.self, from: Data(input.utf8)) }
@@ -94,8 +88,68 @@ enum PlanCodec {
             }
             goal.phases.append(phase)
         }
-        let warnings = try validate(goal)
+        let warnings = prepared.warnings + (try validate(goal))
         return ParsedPlan(goal: goal, warnings: warnings)
+    }
+    // Repairs only syntax commonly added by chat/Markdown copying; semantic validation stays strict.
+    private static func prepare(_ text: String) throws -> (text: String, warnings: [String]) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\u{FEFF}")))
+        let chars = Array(trimmed)
+        var start: Int?; var depth = 0; var quoted = false; var escaped = false
+        var objects: [String] = []
+        for (i, c) in chars.enumerated() {
+            if let begin = start {
+                if quoted {
+                    if escaped { escaped = false }
+                    else if c == "\\" { escaped = true }
+                    else if c == "\"" { quoted = false }
+                } else if c == "\"" { quoted = true }
+                else if c == "{" { depth += 1 }
+                else if c == "}" {
+                    depth -= 1
+                    if depth == 0 { objects.append(String(chars[begin...i])); start = nil }
+                }
+            } else if c == "{" { start = i; depth = 1 }
+        }
+        guard start == nil, objects.count == 1 else {
+            throw PlanFailure(objects.count > 1 ? "发现多个 JSON 对象，请只粘贴一个完整计划。" : "未找到完整 JSON 计划。请重新复制完整输出；内容可能被截断。")
+        }
+        var input = objects[0]
+        // Do not silently reinterpret an array as a single plan.
+        if trimmed.hasPrefix("[") { throw PlanFailure("顶层需要一个 JSON 对象，不能是数组。") }
+        var warnings: [String] = []
+        if input != trimmed { warnings.append("已提取 JSON，忽略外围说明文字或代码块。") }
+        let source = Array(input); var output = ""; var i = 0; quoted = false
+        var repaired = false
+        let markdownEscapes = Set(":._-*#[]()!>~`".map { $0 })
+        while i < source.count {
+            let c = source[i]
+            if quoted {
+                if c == "\\", i + 1 < source.count {
+                    let next = source[i + 1]
+                    if markdownEscapes.contains(next) { output.append(next); repaired = true }
+                    else { output.append(c); output.append(next) }
+                    i += 2; continue
+                }
+                if c == "\"" { quoted = false; output.append(c) }
+                else if c == "\n" { output += "\\n"; repaired = true }
+                else if c == "\r" { output += "\\r"; repaired = true }
+                else if c == "\t" { output += "\\t"; repaired = true }
+                else { output.append(c) }
+            } else {
+                if c == "\"" { quoted = true }
+                if c == "," {
+                    var j = i + 1
+                    while j < source.count && source[j].isWhitespace { j += 1 }
+                    if j < source.count && (source[j] == "}" || source[j] == "]") { repaired = true; i += 1; continue }
+                }
+                output.append(c)
+            }
+            i += 1
+        }
+        input = output
+        if repaired { warnings.append("已修复 Markdown 多余转义、字符串换行或末尾逗号，请检查预览后保存。") }
+        return (input, warnings)
     }
     private static func path(_ keys: [CodingKey]) -> String { keys.map(\.stringValue).joined(separator: ".") }
     static func validate(_ goal: Goal) throws -> [String] {

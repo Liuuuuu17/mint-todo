@@ -23,7 +23,7 @@ Plan import accepts JSON text/files and a complete outer Markdown JSON fence. Va
 
 ### V2: daily linkage
 
-Only an explicit “加入待办列表/今日待办” creates a daily item. Optional `Todo.goalTaskID` is the only extension to the daily file, and old records decode without it. Both sides retain stable IDs. A linked daily Todo is the source of execution status; goal commands update it once and the store callback reconciles without recursive saves. A missing daily item clears its link, retaining the goal task. Deleting a goal/stage/task retains daily items and removes their association. Same-title unlinked daily tasks can be linked after user choice. Goal import rekeys internal IDs, preventing cross-plan collisions.
+Only an explicit “加入待办列表/今日待办” creates a daily item. Optional `Todo.goalTaskID` links daily tasks; 2.2 also adds optional completion/recurrence metadata. Old records decode without these fields. Both sides retain stable IDs. A linked daily Todo is the source of execution status; goal commands update it once and the store callback reconciles without recursive saves. A missing daily item clears its link, retaining the goal task. Deleting a goal/stage/task retains daily items and removes their association. Same-title unlinked daily tasks can be linked after user choice. Goal import rekeys internal IDs, preventing cross-plan collisions.
 
 Only daily Todos enter EventKit; GoalStore has no EventKit calls. Existing reminder updates preserve the optional goal metadata. Completion timestamps and manual Markdown outcome records persist and export.
 
@@ -74,3 +74,25 @@ AI settings supports explicit GET model discovery at the sibling `/models` endpo
 `LongTermTasksView` is the third widget tab and observes the same GoalStore as the wide planning window. Paste-and-parse passes a value-based sheet request to PlanImportView, then uses the shared validator and editable confirmation; no duplicate store or daily pollution. Specific plans open selected in the full planning window, including archived/history selection. Existing short plans remain accessible in this collection.
 
 `PlanRevision` allows explicit whole-plan AI revision with a pre-application preview. It retains matching task UUIDs (unique-title fallback for omitted IDs), daily links, completion state/time and outcome records; new IDs are regenerated and dependencies remapped. New tasks cannot acquire AI-invented completion or links. Removal titles/counts are shown; removed daily items are retained under the existing unlink behavior. Applying a stale snapshot is rejected to protect concurrent completion/reminder updates. This is a preview workflow, not an automatic scheduler or full textual diff engine. No real AI key is needed by tests.
+
+## 2.2 paper design and window interaction
+
+Only the widget's outer mask and background use a Rectangle. Internal tab, entry, card and native control shapes retain their previous rounding. Retro paper is opt-in via `noteStyle`, with four persisted `notePaper` palettes; Canvas draws fixed fibres, rules and a margin without external image assets. The minimal style retains existing glass/solid/transparent/photo preferences. Retro content forces a light local color scheme for legible ink on paper.
+
+The collapsed view uses a 52-point hit area and a 32-point visible circle by default (26–40 in settings). It uses the theme color as an opaque solid or unruled paper texture, with no photo/glass/marks, and docks at the nearest of the current screen's four visible corners.
+
+The old lower-right resize glyph is removed. An AppKit NSView overlay accepts mouse events only within 9-point edges or 18-point corners; it returns nil for the rest of the content. Cursors indicate direction. Drag calculations anchor the opposite edge, respect minimum dimensions, screen bounds and the 900-point cap, and existing NSWindow notifications persist size/position. Unit checks cover the geometry. Native settings fields and buttons remain interactive.
+
+## 2.2 completion, recurrence and tolerant import
+
+Daily Todo adds optional completedAt, repeatRule, repeatInterval, occurrenceAt, generatedFrom and recurrenceSpawnedAt. All old records remain decodable. Completion stamps are set only on a state transition; uncompletion clears the stamp. Reminder imports preserve remote completionDate or use the observed completion time. The Todo tab includes pending and today's completed items; the Completed tab retains all history.
+
+Enter creates a sheet-local draft. Only successful atomic save inserts it; cancellation inserts nothing and write failure keeps the editor open. Daily/weekdays/interval recurrence uses Calendar day arithmetic, preserving local due time across DST. The timer/startup generates one next occurrence when eligible, marking the source in the same write so restart cannot duplicate it. Missed occurrences collapse to the current eligible day; outstanding items do not multiply. Restoring old completion leaves any existing successor intact. Recurrence is local, not mapped to EventKit recurrence rules.
+
+Goal creation creates its named category without creating daily tasks. Explicit attachment inherits it; goal edits regroup linked daily records. Category and goal files remain separately recoverable, not a multi-file transaction.
+
+Import extracts one balanced object while respecting JSON string quoting. It removes Markdown punctuation escapes only inside strings, escapes literal line breaks/tabs, and removes trailing commas outside strings. It reports normalization in warnings and retains strict structural/date/dependency validation. Multiple objects, arrays and truncation are rejected. Copying any custom prompt always appends the current contract and a parse-tested JSON example.
+
+Validation: 127 native checks passed, including calendar recurrence/DST, today-only completion, restore, persistence/idempotency, failed draft writes and tolerant parser fixtures. UI QA uses isolated tasks and disables EventKit. No paid AI endpoint was contacted.
+
+AppKit WindowDragSurface handles explicit header/title dragging and orb pointer tracking with a 3-point threshold. Click without drag opens goals or expands the orb. Collapse chooses the nearest corner from the window center on its current screen; expanding follows a moved orb and clamps into the visible frame. Nine geometry checks cover four-corner docking and screen containment.

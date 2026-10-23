@@ -267,6 +267,7 @@ private struct ReminderLinks: Codable {
         updated.title = reminder.title ?? task.title
         updated.dueAt = dueDate(reminder)
         updated.status = reminder.isCompleted ? .completed : (task.status == .pending ? .pending : .todo)
+        updated.completedAt = reminder.isCompleted ? (reminder.completionDate ?? task.completedAt ?? Date()) : nil
         return updated
     }
 
@@ -313,7 +314,7 @@ private struct ReminderLinks: Codable {
                                               localSignature: localSignature(matching), remoteSignature: remoteSignature(reminder)))
             } else {
                 let task = Todo(title: reminder.title ?? "未命名提醒", category: "提醒事项",
-                                status: reminder.isCompleted ? .completed : .todo, dueAt: dueDate(reminder))
+                                status: reminder.isCompleted ? .completed : .todo, dueAt: dueDate(reminder), completedAt: reminder.isCompleted ? (reminder.completionDate ?? Date()) : nil)
                 updates.append(task)
                 nextLinks.append(ReminderLink(localID: task.id, remoteID: remoteID,
                                               localSignature: localSignature(task), remoteSignature: remoteSignature(reminder)))

@@ -81,7 +81,9 @@ private struct GoalFile: Codable {
         }
         do { _ = try PlanCodec.validate(goal) }
         catch { errorMessage = error.localizedDescription; return nil }
-        return persist(goals + [goal]) ? goal.id : nil
+        guard persist(goals + [goal]) else { return nil }
+        daily.groupGoalTasks(Set(goal.phases.flatMap(\.tasks).map(\.id)), category: goal.title)
+        return goal.id
     }
     @discardableResult func save(_ source: Goal, expected: Goal? = nil) -> Bool {
         guard let index = goals.firstIndex(where: { $0.id == source.id }) else { errorMessage = "目标已被删除。"; return false }
@@ -100,6 +102,7 @@ private struct GoalFile: Codable {
         let oldTasks = goals[index].phases.flatMap(\.tasks)
         var candidate = goals; candidate[index] = goal
         guard persist(candidate) else { return false }
+        daily.groupGoalTasks(Set(goal.phases.flatMap(\.tasks).map(\.id)), category: goal.title)
         for old in oldTasks where !goal.phases.flatMap(\.tasks).contains(where: { $0.id == old.id }) { daily.unlinkGoalTask(old.id) }
         for task in goal.phases.flatMap(\.tasks) {
             if let id = task.linkedTodoID, let state = task.state.todoStatus,
@@ -129,7 +132,7 @@ private struct GoalFile: Codable {
     }
     func attach(_ id: UUID, existing: UUID? = nil, today: Bool = false) {
         guard let task = task(id) else { return }
-        guard let todoID = daily.ensureGoalTodo(task, existing: existing, today: today) else { errorMessage = "待办未保存，目标关联没有变更。"; return }
+        guard let todoID = daily.ensureGoalTodo(task, existing: existing, today: today, category: goals.first(where: { $0.id == task.goalID })?.title ?? "目标任务") else { errorMessage = "待办未保存，目标关联没有变更。"; return }
         _ = updateTask(id) { task in
             task.linkedTodoID = todoID
             if let todo = daily.tasks.first(where: { $0.id == todoID }) { task.state = PlanState(todo: todo.status) }

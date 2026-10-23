@@ -45,7 +45,7 @@ struct LongTermTasksView: View {
                         Button("手动创建计划") { manual = Goal() }
                         Button("AI 设置与模型") { settings = true }
                         Button("打开完整规划窗口") { onOpenAll() }
-                    } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).frame(width: 22)
+                    } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 22)
                     .help("创建计划、AI 设置及完整规划窗口")
                 }
                 if !notice.isEmpty { Text(notice).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }

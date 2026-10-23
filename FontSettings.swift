@@ -253,7 +253,7 @@ struct SettingsSheet: View {
                         .onChange(of: widgetHeight) { value in onResize(CGSize(width: widgetWidth, height: value)) }
                     Text("\(Int(widgetHeight))").frame(width: 40, alignment: .trailing)
                 }
-                Text("也可以拖动主窗口右下角的 ↘ 来调整。")
+                Text("也可以拖动便签的四边或四角调整大小。")
                     .font(.system(size: 10)).foregroundStyle(.secondary)
             }
             .font(.system(size: 11))

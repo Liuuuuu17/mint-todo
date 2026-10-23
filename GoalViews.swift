@@ -116,7 +116,7 @@ struct GoalDetailView: View {
                     Divider()
                     ForEach(PlanState.allCases) { state in Button("标为\(state.title)") { var edited = goal; edited.state = state; _ = store.save(edited) } }
                     Divider(); Button("删除目标", role: .destructive) { deleteConfirmation = true }
-                } label: { Image(systemName: "ellipsis.circle").font(.title2) }
+                } label: { Image(systemName: "ellipsis.circle").font(.title2) }.menuIndicator(.hidden)
             }
             HStack { Text(goal.term.title); Text(goal.state.title); Text(PlanDate.range(goal.startDate, goal.dueDate)); Text(goal.dateOrigin.title) }
                 .font(.caption).foregroundStyle(.secondary)
