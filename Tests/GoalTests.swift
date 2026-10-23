@@ -34,9 +34,63 @@ final class MockAPIProtocol: URLProtocol {
             try schemaTests()
             try storageTests()
             try revisionTests()
+            try resizeTests()
+            try dailyWorkflowTests()
+            try dockingTests()
             try await apiTests()
             print("PASS: \(checks) checks — schema, transactions, backup, linkage, progress, Markdown, API and Keychain")
         } catch { fputs("\(error.localizedDescription)\n", stderr); exit(1) }
+    }
+    static func dockingTests() throws {
+        let screen = NSRect(x: 100, y: 50, width: 1400, height: 1000)
+        for (x, y, expectedX, expectedY) in [(120.0, 70.0, 112.0, 62.0), (1100, 70, 1436, 62), (120, 700, 112, 986), (1100, 700, 1436, 986)] {
+            let origin = WindowDockGeometry.collapsed(from: NSRect(x: x, y: y, width: 320, height: 380), screen: screen)
+            try check(origin == NSPoint(x: expectedX, y: expectedY), "collapse chooses correct screen corner")
+            let expanded = WindowDockGeometry.expanded(from: NSRect(origin: origin, size: NSSize(width: 52, height: 52)), size: NSSize(width: 405, height: 560), screen: screen)
+            try check(screen.contains(expanded), "expanded window stays on selected screen")
+        }
+        let moved = WindowDockGeometry.clamped(NSRect(x: -200, y: 1300, width: 405, height: 560), to: screen)
+        try check(moved.minX == screen.minX && moved.maxY == screen.maxY, "drag release stays reachable")
+    }
+    @MainActor static func dailyWorkflowTests() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = TaskStore(folder: folder, watch: false)
+        var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(identifier: "America/New_York")!
+        func date(_ y: Int, _ m: Int, _ d: Int, _ h: Int = 9) -> Date { calendar.date(from: DateComponents(year: y, month: m, day: d, hour: h))! }
+        let friday = date(2026, 10, 23)
+        var task = Todo(title: "重复任务", category: "生活", createdAt: friday, dueAt: friday)
+        task.repeatRule = .weekdays; task.repeatInterval = 2; task.occurrenceAt = friday
+        try check(store.saveEdited(task), "draft saves atomically")
+        store.setStatus(task, .completed, now: friday)
+        let completed = store.tasks[0]
+        try check(completed.visibleInTodo(on: friday, calendar: calendar), "completion stays in today's list")
+        try check(!completed.visibleInTodo(on: date(2026, 10, 24), calendar: calendar), "older completion only in completed list")
+        try check(completed.completedAt == friday, "completion date persisted")
+        store.refreshRecurring(now: date(2026, 10, 24), calendar: calendar)
+        try check(store.tasks.count == 1, "weekend has no weekday recurrence")
+        store.refreshRecurring(now: date(2026, 10, 26), calendar: calendar)
+        try check(store.tasks.count == 2 && store.tasks[1].status == .todo && store.tasks[1].category == task.category, "next weekday occurrence")
+        try check(calendar.component(.hour, from: store.tasks[1].dueAt!) == 9, "due time retained")
+        store.refreshRecurring(now: date(2026, 10, 26), calendar: calendar)
+        try check(store.tasks.count == 2, "recurrence idempotent")
+        let restarted = TaskStore(folder: folder, watch: false)
+        try check(restarted.tasks.count == 2 && restarted.tasks[0].recurrenceSpawnedAt != nil, "recurrence restart deduplication")
+        store.setStatus(completed, .todo)
+        try check(store.tasks[0].completedAt == nil && store.tasks[0].visibleInTodo(), "undo completion restores todo")
+        try check(RepeatRule.interval.next(after: friday, interval: 3, calendar: calendar) == date(2026, 10, 26), "every N days")
+        try check(RepeatRule.daily.next(after: date(2026, 3, 7), interval: 1, calendar: calendar) == date(2026, 3, 8), "calendar recurrence across DST")
+        var once = Todo(title: "一次任务", category: "生活", createdAt: friday)
+        once.completedAt = friday; once.status = .completed
+        try check(store.saveEdited(once), "one-off task saves")
+        let before = store.tasks.count
+        store.refreshRecurring(now: date(2026, 10, 30), calendar: calendar)
+        try check(store.tasks.count == before, "one-off does not recur")
+        let bad = folder.appendingPathComponent("blocked")
+        let rollback = TaskStore(folder: bad, watch: false)
+        try FileManager.default.removeItem(at: rollback.fileURL)
+        try FileManager.default.createDirectory(at: rollback.fileURL, withIntermediateDirectories: true)
+        try check(!rollback.saveEdited(task) && rollback.tasks.isEmpty, "failed draft save rolls back")
     }
     @MainActor static func schemaTests() throws {
         let parsed = try PlanCodec.parse(sample)
@@ -45,6 +99,9 @@ final class MockAPIProtocol: URLProtocol {
         try check(!parsed.warnings.isEmpty, "empty phase warning")
         let fenced = try PlanCodec.parse("```json\n" + sample + "\n```")
         try check(fenced.goal.title == parsed.goal.title, "fenced JSON")
+        // The final line is the complete literal JSON example, independent of descriptive schema braces.
+        let example = PlanPrompt.contract.components(separatedBy: "\n").first { $0.hasPrefix("{\"schema_version\"") }!
+        try check(try PlanCodec.parse(example).goal.taskCount == 1, "copied prompt example is valid JSON")
         try rejects("missing goal title") { _ = try PlanCodec.parse(sample.replacingOccurrences(of: "\"title\":\"完成一个研究项目\",", with: "")) }
         try rejects("unknown schema") { _ = try PlanCodec.parse(sample.replacingOccurrences(of: "orb-todo-plan-v1", with: "v9")) }
         try rejects("wrong type") { _ = try PlanCodec.parse(sample.replacingOccurrences(of: "\"estimated_minutes\":90", with: "\"estimated_minutes\":\"90\"")) }
@@ -52,7 +109,16 @@ final class MockAPIProtocol: URLProtocol {
         try rejects("reversed dates") { _ = try PlanCodec.parse(sample.replacingOccurrences(of: "\"due_date\":null},\"phases\"", with: "\"due_date\":\"2020-01-01\"},\"phases\"")) }
         try rejects("negative estimate") { _ = try PlanCodec.parse(sample.replacingOccurrences(of: "\"estimated_minutes\":90", with: "\"estimated_minutes\":-2")) }
         try rejects("truncated JSON") { _ = try PlanCodec.parse(String(sample.dropLast(12))) }
-        try rejects("mixed prose") { _ = try PlanCodec.parse("Here is your JSON\n" + sample) }
+        try check(try PlanCodec.parse("Here is your JSON\n```json\n" + sample + "\n```\n完成").goal.taskCount == 2, "prose and fence extraction")
+        let markdown = sample.replacingOccurrences(of: "理解结构组成。", with: #"链接 https\://example\.com/path 与 \_文字\_"#)
+        let repaired = try PlanCodec.parse(markdown)
+        try check(repaired.goal.phases[0].tasks[0].notes.contains("https://example.com/path 与 _文字_") && repaired.warnings.contains(where: { $0.contains("修复") }), "Markdown escapes repaired with warning")
+        try check(try PlanCodec.parse(sample.replacingOccurrences(of: "理解结构组成。", with: "第一行\n第二行")).goal.phases[0].tasks[0].notes.contains("第一行\n第二行"), "literal newline repair")
+        try check(try PlanCodec.parse(sample.replacingOccurrences(of: "90,", with: "90,")).goal.taskCount == 2, "valid JSON unaffected")
+        try check(try PlanCodec.parse(sample.replacingOccurrences(of: "\"phases\":[", with: "\"phases\":[").replacingOccurrences(of: "tasks\":[]}", with: "tasks\":[],}")).goal.taskCount == 2, "trailing comma repair")
+        try rejects("multiple plans") { _ = try PlanCodec.parse(sample + "\n" + sample) }
+        try rejects("array plan") { _ = try PlanCodec.parse("[" + sample + "]") }
+        try check(try PlanCodec.parse("\u{FEFF}" + sample).goal.taskCount == 2, "BOM tolerated")
         let unknown = sample.replacingOccurrences(of: "\"schema_version\"", with: "\"future_optional\":true,\"schema_version\"")
         try check(try PlanCodec.parse(unknown).goal.taskCount == 2, "unknown optional field")
         var goal = parsed.goal
@@ -87,11 +153,10 @@ final class MockAPIProtocol: URLProtocol {
         try check(daily.tasks.count == 1 && daily.tasks[0].goalTaskID == nil, "legacy daily load")
         let goals = GoalStore(daily: daily, folder: folder)
         daily.onChange = { [weak goals] in goals?.reconcileTodos() }
-        let original = try Data(contentsOf: oldURL)
         let draft = try PlanCodec.parse(sample).goal
         try check(!FileManager.default.fileExists(atPath: goals.fileURL.path), "preview never persists")
         guard let id = goals.insert(draft) else { throw PlanFailure(goals.errorMessage ?? "insert") }
-        try check(daily.tasks.count == 1 && (try Data(contentsOf: oldURL)) == original, "goals never pollute daily")
+        try check(daily.tasks.count == 1 && daily.categories.contains(draft.title), "goal creates category without adding daily tasks")
         try check(goals.goals.count == 1, "whole plan inserted")
         try check(goals.insert(draft) == nil && goals.goals.count == 1, "duplicate blocked")
         try check(goals.insert(draft, allowDuplicate: true) != nil, "confirmed duplicate allowed")
@@ -192,6 +257,21 @@ final class MockAPIProtocol: URLProtocol {
         let before = try Data(contentsOf: store.fileURL)
         try check(!store.save(snapshot, expected: snapshot), "stale AI preview rejected")
         try check(try Data(contentsOf: store.fileURL) == before, "stale preview never overwrites recent progress")
+    }
+    static func resizeTests() throws {
+        let frame = NSRect(x: 100, y: 100, width: 405, height: 560)
+        let screen = NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let minimum = NSSize(width: 320, height: 380)
+        let right = WindowResizeGeometry.resize(frame, delta: NSPoint(x: 80, y: 0), edges: .right, minimum: minimum, screen: screen)
+        try check(right.width == 485 && right.minX == frame.minX, "right edge anchors left")
+        let left = WindowResizeGeometry.resize(frame, delta: NSPoint(x: 500, y: 0), edges: .left, minimum: minimum, screen: screen)
+        try check(left.width == 320 && left.maxX == frame.maxX, "left edge minimum and right anchor")
+        let bottom = WindowResizeGeometry.resize(frame, delta: NSPoint(x: 0, y: 500), edges: .bottom, minimum: minimum, screen: screen)
+        try check(bottom.height == 380 && bottom.maxY == frame.maxY, "bottom minimum and top anchor")
+        let corner = WindowResizeGeometry.resize(frame, delta: NSPoint(x: -40, y: 50), edges: [.left, .top], minimum: minimum, screen: screen)
+        try check(corner.width == 445 && corner.height == 610 && corner.maxX == frame.maxX && corner.minY == frame.minY, "corner resize anchors opposite edges")
+        let cap = WindowResizeGeometry.resize(frame, delta: NSPoint(x: 5000, y: 5000), edges: [.right, .top], minimum: minimum, screen: screen)
+        try check(cap.width == 900 && cap.maxY <= screen.maxY, "resize respects screen and size cap")
     }
     static func apiReply(_ content: String, reason: String = "stop") throws -> Data {
         try JSONSerialization.data(withJSONObject: ["choices": [["finish_reason": reason, "message": ["content": content]]]])
