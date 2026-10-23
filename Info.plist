@@ -1,17 +1,48 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>CFBundleName</key><string>Mint Todo</string>
-  <key>CFBundleDisplayName</key><string>Mint Todo</string>
-  <key>CFBundleIdentifier</key><string>com.codex.orbtodo</string>
-  <key>CFBundleVersion</key><string>10</string>
-  <key>CFBundleShortVersionString</key><string>2.2</string>
-  <key>CFBundleExecutable</key><string>MintTodo</string>
-  <key>CFBundleIconFile</key><string>MintTodo.icns</string>
-  <key>CFBundlePackageType</key><string>APPL</string>
-  <key>LSMinimumSystemVersion</key><string>13.0</string>
-  <key>LSUIElement</key><true/>
-  <key>NSHighResolutionCapable</key><true/>
-  <key>NSRemindersUsageDescription</key><string>将 Mint Todo 的待办与您选择的提醒事项列表同步。</string>
-  <key>NSRemindersFullAccessUsageDescription</key><string>读取并更新您选择的提醒事项列表，与 Mint Todo 双向同步。</string>
-</dict></plist>
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>Mint Todo</string>
+	<key>CFBundleDisplayName</key>
+	<string>Mint Todo</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.codex.orbtodo</string>
+	<key>CFBundleVersion</key>
+	<string>11</string>
+	<key>CFBundleShortVersionString</key>
+	<string>2.3</string>
+	<key>CFBundleExecutable</key>
+	<string>MintTodo</string>
+	<key>CFBundleIconFile</key>
+	<string>MintTodo.icns</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSRemindersUsageDescription</key>
+	<string>将 Mint Todo 的待办与您选择的提醒事项列表同步。</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>读取并更新您选择的提醒事项列表，与 Mint Todo 双向同步。</string>
+	<key>SUFeedURL</key>
+	<string>https://github.com/Liuuuuu17/mint-todo/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>YjoX3Ty0t4aAXO8FST1tOlU2g+D4UE3HK57pWVJs6lQ=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUAutomaticallyUpdate</key>
+	<true/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
+	<key>SURequireSignedFeed</key>
+	<true/>
+	<key>SUEnableSystemProfiling</key>
+	<false/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
+</dict>
+</plist>

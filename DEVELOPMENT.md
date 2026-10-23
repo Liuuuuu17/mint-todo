@@ -96,3 +96,13 @@ Import extracts one balanced object while respecting JSON string quoting. It rem
 Validation: 127 native checks passed, including calendar recurrence/DST, today-only completion, restore, persistence/idempotency, failed draft writes and tolerant parser fixtures. UI QA uses isolated tasks and disables EventKit. No paid AI endpoint was contacted.
 
 AppKit WindowDragSurface handles explicit header/title dragging and orb pointer tracking with a 3-point threshold. Click without drag opens goals or expands the orb. Collapse chooses the nearest corner from the window center on its current screen; expanding follows a moved orb and clamps into the visible frame. Nine geometry checks cover four-corner docking and screen containment.
+
+## 2.3 signed automatic updates
+
+AppUpdater.swift wraps Sparkle 2.10.0 SPUStandardUpdaterController. Info.plist supplies a fixed GitHub Releases latest/download/appcast.xml URL, public Ed25519 key, automatic-check/download defaults, signed-feed requirement and verify-before-extraction. No system profiling. Sparkle owns scheduling and preferences; the UI binds its properties instead of duplicating defaults. Startup may make one immediate background check only when automatic checks are enabled. Test mode disables the updater unless MINTTODO_TEST_UPDATES=1 explicitly opts in.
+
+setup-sparkle.sh downloads the exact official archive with a pinned SHA-256. build.sh embeds the upstream-signed universal framework preserving symlinks/signatures, includes its complete license and signs the containing app ad hoc. The app is not Developer ID signed/notarized; Gatekeeper/translocation and non-writable locations may require initial manual installation or authorization. Existing data stays outside the bundle.
+
+release.sh verifies that Keychain account com.codex.orbtodo.release matches SUPublicEDKey, builds the app, signs its archive and feed using generate_appcast. Never export/commit/upload the private key. Keep that Keychain available for future releases. Publish v<CFBundleShortVersionString> against the source branch and attach the unmodified MintTodo-macOS.zip and appcast.xml to a GitHub Release marked latest. Attach MintTodo-project.zip for optional full-source downloads. The README's stable latest/download links do not change between releases. Increment both CFBundleVersion and version label for new releases. Do not replace signed bytes in an existing tag.
+
+Header labels are single-line fixed-size; 40-point controls and a 44 × 40 collapse hit area fit the 320-point minimum width. The edge overlay passes header control events through except the outermost 3 points. Unpublished release feeds are regenerated after each rebuild so signatures always match the archive.

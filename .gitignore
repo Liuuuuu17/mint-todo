@@ -1,3 +1,6 @@
 .DS_Store
 work/
 *.dSYM/
+
+.build-deps/
+release/

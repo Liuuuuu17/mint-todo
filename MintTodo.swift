@@ -419,27 +419,35 @@ struct WidgetView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 4) {
             Text(noteStyle == "retro" ? "MINT / NOTES" : "MINT TODO")
                 .font(.system(size: 11, weight: .semibold, design: .monospaced)).tracking(2)
+                .lineLimit(1).fixedSize(horizontal: true, vertical: true)
                 .overlay { WindowDragSurface(click: onGoals) }
                 .help("拖动移动便签，点击打开目标规划")
-            Spacer().frame(maxHeight: .infinity).background { WindowDragSurface() }
+            Spacer(minLength: 8).frame(maxHeight: .infinity).background { WindowDragSurface() }
             Button { pinned.toggle(); onPin(pinned) } label: {
                 Image(systemName: pinned ? "pin.fill" : "pin")
                     .font(.system(size: 13))
                     .rotationEffect(.degrees(35))
+                    .frame(width: 40, height: 40).contentShape(Rectangle())
             }
             .help(pinned ? "取消置顶" : "置顶")
-            Button { showSettings = true } label: { Image(systemName: "gearshape").font(.system(size: 15)) }
+            Button { showSettings = true } label: {
+                Image(systemName: "gearshape").font(.system(size: 15))
+                    .frame(width: 40, height: 40).contentShape(Rectangle())
+            }
                 .help("设置")
-            Button(action: onCollapse) { Image(systemName: "minus").font(.system(size: 16, weight: .semibold)) }
+            Button(action: onCollapse) {
+                Image(systemName: "minus").font(.system(size: 16, weight: .semibold))
+                    .frame(width: 44, height: 40).contentShape(Rectangle())
+            }
                 .help("收起为小圆点")
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
-        .padding(.horizontal, 23)
-        .frame(height: 48)
+        .padding(.horizontal, 14)
+        .frame(height: 52)
     }
 
     private var statusBar: some View {
@@ -832,6 +840,7 @@ final class FloatingPanel: NSPanel {
         makeWindows()
         makeMenuBar()
         showWidget()
+        AppUpdater.shared.start()
     }
 
     private func makeWindows() {
@@ -907,6 +916,7 @@ final class FloatingPanel: NSPanel {
         menu.addItem(withTitle: "复制清单文本", action: #selector(copyList), keyEquivalent: "c").target = self
         menu.addItem(withTitle: "打开数据文件", action: #selector(openDataFile), keyEquivalent: "").target = self
         menu.addItem(.separator())
+        menu.addItem(withTitle: "检查更新…", action: #selector(checkForUpdates), keyEquivalent: "").target = self
         menu.addItem(withTitle: "退出 Mint Todo", action: #selector(quit), keyEquivalent: "q").target = self
         statusItem.menu = menu
     }
@@ -962,6 +972,7 @@ final class FloatingPanel: NSPanel {
         NSPasteboard.general.setString(store.textExport(), forType: .string)
     }
     @objc private func openDataFile() { NSWorkspace.shared.activateFileViewerSelecting([store.fileURL]) }
+    @objc private func checkForUpdates() { AppUpdater.shared.check() }
     @objc private func quit() { NSApp.terminate(nil) }
 }
 

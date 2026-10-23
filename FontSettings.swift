@@ -153,6 +153,8 @@ struct SettingsSheet: View {
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
+            UpdateSettings()
+            Divider()
             VStack(alignment: .leading, spacing: 12) {
                 Text("字体").font(.system(size: 14, weight: .semibold))
                 HStack {

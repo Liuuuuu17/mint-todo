@@ -47,6 +47,9 @@ final class EdgeResizeView: NSView {
 
     private func edges(at point: NSPoint) -> ResizeEdges {
         guard bounds.contains(point) else { return [] }
+        // Header buttons own their full padded hit areas; only the outermost 3 pt resize here.
+        if point.y > bounds.maxY - 52 && point.y < bounds.maxY - 3
+            && point.x > bounds.maxX - 144 && point.x < bounds.maxX - 3 { return [] }
         var edges: ResizeEdges = []
         let nearLeft = point.x < corner, nearRight = point.x > bounds.maxX - corner
         let nearBottom = point.y < corner, nearTop = point.y > bounds.maxY - corner
