@@ -5,6 +5,13 @@ import UniformTypeIdentifiers
 struct GoalsView: View {
     @ObservedObject var store: GoalStore
     @State private var selection: UUID?
+    init(store: GoalStore, selectedGoal: UUID? = nil) {
+        self.store = store
+        _selection = State(initialValue: selectedGoal)
+        _filter = State(initialValue: store.goals.first(where: { $0.id == selectedGoal }).map {
+            $0.state == .archived ? "archive" : [.completed, .cancelled].contains($0.state) ? "history" : "active"
+        } ?? "active")
+    }
     @State private var filter = "active"
     @State private var search = ""
     @State private var importPlan = false
@@ -71,6 +78,7 @@ struct GoalDetailView: View {
     let goal: Goal
     @State private var collapsed: Set<UUID> = []
     @State private var editor = false
+    @State private var revise = false
     @State private var selectedTask: GoalTask?
     @State private var deleteConfirmation = false
     var body: some View {
@@ -91,6 +99,7 @@ struct GoalDetailView: View {
                 }
             }.padding(28)
         }
+        .sheet(isPresented: $revise) { PlanRevisionView(store: store, original: goal) }
         .sheet(isPresented: $editor) { GoalEditorView(initial: goal, heading: "编辑计划", store: store, isNew: false) }
         .sheet(item: $selectedTask) { task in GoalTaskDetailView(store: store, taskID: task.id, goalTitle: goal.title) }
         .confirmationDialog("删除目标及其规划数据？已加入的日常待办将保留并解除关联。", isPresented: $deleteConfirmation) { Button("删除目标", role: .destructive) { store.delete(goal) } }
@@ -112,7 +121,7 @@ struct GoalDetailView: View {
             HStack { Text(goal.term.title); Text(goal.state.title); Text(PlanDate.range(goal.startDate, goal.dueDate)); Text(goal.dateOrigin.title) }
                 .font(.caption).foregroundStyle(.secondary)
             if !goal.tags.isEmpty { Text(goal.tags).font(.caption).foregroundStyle(.secondary) }
-            HStack { Button("编辑计划") { editor = true }; Button("导出 JSON…") { export() } }
+            HStack { Button("编辑计划") { editor = true }; Button("AI 修改计划") { revise = true }; Button("导出 JSON…") { export() } }
         }
     }
     private func phaseCard(_ phase: GoalPhase, index: Int) -> some View {

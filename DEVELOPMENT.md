@@ -68,3 +68,9 @@ Live paid/provider-specific API calls require the user's configuration; HTTP beh
 ## 2.0.1 model discovery
 
 AI settings supports explicit GET model discovery at the sibling `/models` endpoint (root, `/v1`, prefixed paths and complete Chat Completions URLs normalize consistently). Standard `data[].id` responses are deduplicated and sorted. Empty, malformed, unauthorized, timed out or cancelled responses preserve input and permit manual model entry. A changed URL cannot silently reuse a different saved endpoint’s key for discovery. Fetched IDs may include non-chat models; connection testing remains available. API contract: https://developers.openai.com/api/reference/resources/models/methods/list. No real user key is accessed by the automated tests.
+
+## 2.1 integrated long-term tab
+
+`LongTermTasksView` is the third widget tab and observes the same GoalStore as the wide planning window. Paste-and-parse passes a value-based sheet request to PlanImportView, then uses the shared validator and editable confirmation; no duplicate store or daily pollution. Specific plans open selected in the full planning window, including archived/history selection. Existing short plans remain accessible in this collection.
+
+`PlanRevision` allows explicit whole-plan AI revision with a pre-application preview. It retains matching task UUIDs (unique-title fallback for omitted IDs), daily links, completion state/time and outcome records; new IDs are regenerated and dependencies remapped. New tasks cannot acquire AI-invented completion or links. Removal titles/counts are shown; removed daily items are retained under the existing unlink behavior. Applying a stale snapshot is rejected to protect concurrent completion/reminder updates. This is a preview workflow, not an automatic scheduler or full textual diff engine. No real AI key is needed by tests.

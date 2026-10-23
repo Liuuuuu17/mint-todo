@@ -83,8 +83,12 @@ private struct GoalFile: Codable {
         catch { errorMessage = error.localizedDescription; return nil }
         return persist(goals + [goal]) ? goal.id : nil
     }
-    @discardableResult func save(_ source: Goal) -> Bool {
+    @discardableResult func save(_ source: Goal, expected: Goal? = nil) -> Bool {
         guard let index = goals.firstIndex(where: { $0.id == source.id }) else { errorMessage = "目标已被删除。"; return false }
+        if let expected, goals[index] != expected {
+            errorMessage = "计划在预览期间发生了变化，请关闭预览并重新生成，避免覆盖最新进度。"
+            return false
+        }
         var goal = source; goal.updatedAt = Date()
         for p in goal.phases.indices {
             for t in goal.phases[p].tasks.indices {

@@ -26,12 +26,13 @@ struct GoalEditorView: View {
     @State private var draft: Goal
     let heading: String
     let isNew: Bool
+    let expectedOriginal: Goal?
     var onSaved: () -> Void
     @State private var taskEditor: GoalTask?
     @State private var issue = ""
     @State private var duplicateConfirmation = false
-    init(initial: Goal, heading: String, store: GoalStore, isNew: Bool, onSaved: @escaping () -> Void = {}) {
-        _draft = State(initialValue: initial); self.heading = heading; self.store = store; self.isNew = isNew; self.onSaved = onSaved
+    init(initial: Goal, heading: String, store: GoalStore, isNew: Bool, expectedOriginal: Goal? = nil, onSaved: @escaping () -> Void = {}) {
+        _draft = State(initialValue: initial); self.heading = heading; self.store = store; self.isNew = isNew; self.expectedOriginal = expectedOriginal; self.onSaved = onSaved
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -90,7 +91,7 @@ struct GoalEditorView: View {
         else { save(allowDuplicate: false) }
     }
     private func save(allowDuplicate: Bool) {
-        let success = isNew ? store.insert(draft, allowDuplicate: allowDuplicate) != nil : store.save(draft)
+        let success = isNew ? store.insert(draft, allowDuplicate: allowDuplicate) != nil : store.save(draft, expected: expectedOriginal)
         if success { onSaved(); dismiss() } else { issue = store.errorMessage ?? "保存失败。" }
     }
 }
@@ -179,13 +180,20 @@ struct GoalTaskEditor: View {
 struct PlanImportView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var store: GoalStore
-    @State private var text = ""
+    let parseImmediately: Bool
+    @State private var initialized = false
+    @State private var text: String
+    init(store: GoalStore, initialText: String = "", parseImmediately: Bool = false) {
+        self.store = store
+        self.parseImmediately = parseImmediately
+        _text = State(initialValue: initialText)
+    }
     @State private var issue = ""
     @State private var preview: Goal?
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack { Text("导入已有计划").font(.title2.bold()); Spacer(); Button("关闭") { dismiss() } }
-            Text("粘贴 orb-todo-plan-v1 JSON 或选择文件。此流程完全不需要 API Key。")
+            HStack { Text("导入长期任务").font(.title2.bold()); Spacer(); Button("关闭") { dismiss() } }
+            Text("把 AI 生成的完整计划 JSON 粘贴到下方，点“解析并预览”，编辑确认后存入长期任务。无需 API Key。")
                 .font(.callout).foregroundStyle(.secondary)
             HStack {
                 Button("复制 AI 提示词") { AISettings.copyPrompt() }
@@ -196,6 +204,14 @@ struct PlanImportView: View {
             Text(issue).foregroundStyle(.red).font(.callout).textSelection(.enabled)
             HStack { Text("支持完整的 Markdown JSON 代码块包装。").font(.caption).foregroundStyle(.secondary); Spacer(); Button("解析并预览") { parse() }.disabled(text.isEmpty).keyboardShortcut(.defaultAction) }
         }.padding(24).frame(width: 740, height: 620)
+        .task {
+            guard !initialized else { return }
+            initialized = true
+            if parseImmediately {
+                if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { issue = "剪贴板中没有文本，请粘贴 AI 返回的计划 JSON。" }
+                else { parse() }
+            }
+        }
         .sheet(item: $preview) { goal in GoalEditorView(initial: goal, heading: "计划导入预览", store: store, isNew: true, onSaved: { dismiss() }) }
     }
     private func parse() { do { preview = try PlanCodec.parse(text).goal; issue = "" } catch { issue = error.localizedDescription } }

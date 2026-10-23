@@ -260,12 +260,15 @@ struct WidgetView: View {
     @ObservedObject var store: TaskStore
     @ObservedObject var fontLibrary: FontLibrary
     @ObservedObject var reminderSync: RemindersSync
+    @ObservedObject var goalStore: GoalStore
+    let onOpenGoal: (UUID) -> Void
     let onCollapse: () -> Void
     let onGoals: () -> Void
     let onPin: (Bool) -> Void
     let onOpacity: (Double) -> Void
     let onResize: (CGSize) -> Void
 
+    @State private var showingLongTerm = false
     @State private var input = ""
     @State private var chosenCategory = "工作"
     @State private var editing: Todo?
@@ -285,6 +288,9 @@ struct WidgetView: View {
             header
             statusBar
             Divider().opacity(0.36).padding(.horizontal, 21)
+            if showingLongTerm {
+                LongTermTasksView(store: goalStore, onOpenGoal: onOpenGoal, onOpenAll: onGoals)
+            } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     let visible = store.tasks.filter { $0.status == store.selectedStatus }
@@ -302,6 +308,7 @@ struct WidgetView: View {
                 .padding(.bottom, 20)
             }
             bottomBar
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .frame(minWidth: 320, minHeight: 380)
@@ -379,19 +386,19 @@ struct WidgetView: View {
         HStack(spacing: 3) {
             ForEach([TaskStatus.todo, .pending]) { status in
                 Button {
-                    withAnimation(.easeInOut(duration: 0.18)) { store.selectedStatus = status }
+                    withAnimation(.easeInOut(duration: 0.18)) { showingLongTerm = false; store.selectedStatus = status }
                 } label: {
                     HStack(spacing: 4) {
                         Text(status.title)
                         let count = store.tasks.filter { $0.status == status }.count
                         if count > 0 { Text("\(count)").font(.system(size: 10, weight: .bold)).opacity(0.65) }
                     }
-                    .font(fontLibrary.font(12, weight: store.selectedStatus == status ? .semibold : .medium))
-                    .foregroundStyle(store.selectedStatus == status ? Color.primary : Color.secondary)
+                    .font(fontLibrary.font(12, weight: !showingLongTerm && store.selectedStatus == status ? .semibold : .medium))
+                    .foregroundStyle(!showingLongTerm && store.selectedStatus == status ? Color.primary : Color.secondary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 9)
                     .background {
-                        if store.selectedStatus == status {
+                        if !showingLongTerm && store.selectedStatus == status {
                             RoundedRectangle(cornerRadius: 10).fill(.white.opacity(0.68))
                                 .shadow(color: .black.opacity(0.05), radius: 5, y: 2)
                         }
@@ -399,6 +406,15 @@ struct WidgetView: View {
                 }
                 .buttonStyle(.plain)
             }
+            Button { withAnimation(.easeInOut(duration: 0.18)) { showingLongTerm = true } } label: {
+                Text("长期任务")
+                    .font(fontLibrary.font(12, weight: showingLongTerm ? .semibold : .medium))
+                    .foregroundStyle(showingLongTerm ? Color.primary : Color.secondary)
+                    .frame(maxWidth: .infinity).padding(.vertical, 9)
+                    .background {
+                        if showingLongTerm { RoundedRectangle(cornerRadius: 10).fill(.white.opacity(0.68)) }
+                    }
+            }.buttonStyle(.plain)
         }
         .padding(4)
         .background(RoundedRectangle(cornerRadius: 13).fill(.black.opacity(0.045)))
@@ -760,6 +776,8 @@ final class FloatingPanel: NSPanel {
             store: store,
             fontLibrary: fontLibrary,
             reminderSync: reminders,
+            goalStore: goals,
+            onOpenGoal: { [weak self] id in self?.openGoals(selected: id) },
             onCollapse: { [weak self] in self?.showOrb() },
             onGoals: { [weak self] in self?.showGoals() },
             onPin: { [weak self] value in self?.setPinned(value) },
@@ -826,7 +844,9 @@ final class FloatingPanel: NSPanel {
         statusItem.menu = menu
     }
 
-    @objc private func showGoals() {
+    @objc private func showGoals() { openGoals(selected: nil) }
+
+    private func openGoals(selected: UUID?) {
         if goalsWindow == nil {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1120, height: 760),
                                   styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
@@ -838,6 +858,7 @@ final class FloatingPanel: NSPanel {
             window.center()
             goalsWindow = window
         }
+        if let selected { goalsWindow?.contentView = NSHostingView(rootView: GoalsView(store: goals, selectedGoal: selected)) }
         goalsWindow?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
