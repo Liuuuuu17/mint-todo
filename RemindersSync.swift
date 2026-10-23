@@ -131,6 +131,8 @@ private struct ReminderLinks: Codable {
             .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
         if !selectedListID.isEmpty && !lists.contains(where: { $0.id == selectedListID }) {
             cancelFetch()
+            selectedListID = ""
+            preferences.set("", forKey: "remindersListID")
             enabled = false
             preferences.set(false, forKey: "remindersSyncEnabled")
             status = "所选列表暂不可用。请刷新或重新选择；本机待办和同步记录均保留。"
@@ -170,6 +172,7 @@ private struct ReminderLinks: Codable {
     func chooseList(_ id: String) {
         cancelFetch()
         selectedListID = id
+        if id.isEmpty { enabled = false; preferences.set(false, forKey: "remindersSyncEnabled") }
         preferences.set(id, forKey: "remindersListID")
         if enabled { scheduleSync() }
     }
