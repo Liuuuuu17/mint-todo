@@ -64,8 +64,8 @@ final class MockAPIProtocol: URLProtocol {
         try check(store.saveEdited(task), "draft saves atomically")
         store.setStatus(task, .completed, now: friday)
         let completed = store.tasks[0]
-        try check(completed.visibleInTodo(on: friday, calendar: calendar), "completion stays in today's list")
-        try check(!completed.visibleInTodo(on: date(2026, 10, 24), calendar: calendar), "older completion only in completed list")
+        try check(!completed.visibleInTodo(), "completion immediately leaves todo list")
+        try check(store.tasks.contains(where: { $0.id == task.id && $0.status == .completed }), "completion retained in completed list")
         try check(completed.completedAt == friday, "completion date persisted")
         store.refreshRecurring(now: date(2026, 10, 24), calendar: calendar)
         try check(store.tasks.count == 1, "weekend has no weekday recurrence")
