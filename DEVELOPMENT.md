@@ -106,3 +106,7 @@ setup-sparkle.sh downloads the exact official archive with a pinned SHA-256. bui
 release.sh verifies that Keychain account com.codex.orbtodo.release matches SUPublicEDKey, builds the app, signs its archive and feed using generate_appcast. Never export/commit/upload the private key. Keep that Keychain available for future releases. Publish v<CFBundleShortVersionString> against the source branch and attach the unmodified MintTodo-macOS.zip and appcast.xml to a GitHub Release marked latest. Attach MintTodo-project.zip for optional full-source downloads. The README's stable latest/download links do not change between releases. Increment both CFBundleVersion and version label for new releases. Do not replace signed bytes in an existing tag.
 
 Header labels are single-line fixed-size; 40-point controls and a 44 × 40 collapse hit area fit the 320-point minimum width. The edge overlay passes header control events through except the outermost 3 points. Unpublished release feeds are regenerated after each rebuild so signatures always match the archive.
+
+## 2.3.1 immediate completion
+
+The Todo tab now shows only todo and pending tasks. Completed tasks move immediately to the Completed tab, where unchecking restores them. Removed the redundant day-change refresh; recurrence and completion timestamps are unchanged. All 127 native checks pass, including immediate removal, retained history and restoration.

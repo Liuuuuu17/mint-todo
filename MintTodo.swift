@@ -51,8 +51,8 @@ struct Todo: Identifiable, Codable, Equatable {
     var generatedFrom: UUID? = nil
     var recurrenceSpawnedAt: Date? = nil
 
-    func visibleInTodo(on day: Date = Date(), calendar: Calendar = .current) -> Bool {
-        status == .todo || status == .pending || (status == .completed && completedAt.map { calendar.isDate($0, inSameDayAs: day) } == true)
+    func visibleInTodo() -> Bool {
+        status == .todo || status == .pending
     }
 }
 
@@ -70,7 +70,6 @@ struct SavedData: Codable {
     let fileURL: URL
     private var lastModified: Date?
     private var watchTimer: Timer?
-    private var observedDay = Calendar.current.startOfDay(for: Date())
 
     init(folder override: URL? = nil, watch: Bool = true) {
         let folder = override ?? ProcessInfo.processInfo.environment["MINTTODO_DATA_DIR"].map { URL(fileURLWithPath: $0) } ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -86,13 +85,8 @@ struct SavedData: Codable {
         lastModified = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
         refreshRecurring()
         if watch { watchTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.reloadIfChanged(); self?.refreshRecurring(); self?.refreshDay() }
+            Task { @MainActor in self?.reloadIfChanged(); self?.refreshRecurring() }
         } }
-    }
-
-    private func refreshDay() {
-        let day = Calendar.current.startOfDay(for: Date())
-        if day != observedDay { observedDay = day; objectWillChange.send() }
     }
 
     @discardableResult private func save() -> Bool {
