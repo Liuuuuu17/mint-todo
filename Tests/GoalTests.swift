@@ -36,6 +36,7 @@ final class MockAPIProtocol: URLProtocol {
             try revisionTests()
             try resizeTests()
             try dailyWorkflowTests()
+            try subtaskTests()
             try dockingTests()
             try await apiTests()
             print("PASS: \(checks) checks — schema, transactions, backup, linkage, progress, Markdown, API and Keychain")
@@ -51,6 +52,31 @@ final class MockAPIProtocol: URLProtocol {
         }
         let moved = WindowDockGeometry.clamped(NSRect(x: -200, y: 1300, width: 405, height: 560), to: screen)
         try check(moved.minX == screen.minX && moved.maxY == screen.maxY, "drag release stays reachable")
+    }
+    @MainActor static func subtaskTests() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("MintSubtasks-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = TaskStore(folder: folder, watch: false)
+        var task = Todo(title: "整理报告", category: "工作")
+        task.subtasks = [TodoSubtask(title: "收集资料"), TodoSubtask(title: "写摘要")]
+        try check(store.saveEdited(task), "subtasks save with parent")
+        let firstID = task.subtasks[0].id
+        store.setSubtaskCompleted(taskID: task.id, subtaskID: firstID, completed: true)
+        try check(store.tasks[0].subtasks[0].isCompleted && store.tasks[0].status == .todo, "subtask completion stays independent")
+        let reopened = TaskStore(folder: folder, watch: false)
+        try check(reopened.tasks[0].subtasks[0].id == firstID && reopened.tasks[0].subtasks[0].isCompleted, "subtasks survive restart")
+        let exported = store.textExport()
+        let imported = TaskStore(folder: folder.appendingPathComponent("import"), watch: false)
+        try check(imported.importText(exported) == 1, "text import counts parent only")
+        try check(imported.tasks[0].subtasks.map(\.title) == ["收集资料", "写摘要"] && imported.tasks[0].subtasks[0].isCompleted, "text roundtrip preserves subtasks")
+        var recurring = store.tasks[0]
+        recurring.repeatRule = .daily
+        recurring.occurrenceAt = Date(timeIntervalSince1970: 100)
+        try check(store.saveEdited(recurring), "recurring parent saves")
+        store.setStatus(recurring, .completed, now: Date(timeIntervalSince1970: 200))
+        store.refreshRecurring(now: Date(timeIntervalSince1970: 100000))
+        try check(store.tasks.count == 2 && store.tasks[1].subtasks.count == 2, "recurrence carries subtask template")
+        try check(store.tasks[1].subtasks.allSatisfy { !$0.isCompleted } && store.tasks[1].subtasks[0].id != firstID, "new occurrence resets subtask progress and IDs")
     }
     @MainActor static func dailyWorkflowTests() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
