@@ -36,6 +36,12 @@ enum RepeatRule: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+struct TodoSubtask: Identifiable, Codable, Equatable {
+    var id: UUID = UUID()
+    var title: String
+    var isCompleted = false
+}
+
 struct Todo: Identifiable, Codable, Equatable {
     var id: UUID = UUID()
     var title: String
@@ -50,9 +56,35 @@ struct Todo: Identifiable, Codable, Equatable {
     var occurrenceAt: Date? = nil
     var generatedFrom: UUID? = nil
     var recurrenceSpawnedAt: Date? = nil
+    var subtasks: [TodoSubtask] = []
 
     func visibleInTodo() -> Bool {
         status == .todo || status == .pending
+    }
+}
+
+extension Todo {
+    private enum CodingKeys: String, CodingKey {
+        case id, title, category, status, createdAt, dueAt, goalTaskID, completedAt
+        case repeatRule, repeatInterval, occurrenceAt, generatedFrom, recurrenceSpawnedAt, subtasks
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        title = try values.decode(String.self, forKey: .title)
+        category = try values.decode(String.self, forKey: .category)
+        status = try values.decodeIfPresent(TaskStatus.self, forKey: .status) ?? .todo
+        createdAt = try values.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+        dueAt = try values.decodeIfPresent(Date.self, forKey: .dueAt)
+        goalTaskID = try values.decodeIfPresent(UUID.self, forKey: .goalTaskID)
+        completedAt = try values.decodeIfPresent(Date.self, forKey: .completedAt)
+        repeatRule = try values.decodeIfPresent(RepeatRule.self, forKey: .repeatRule)
+        repeatInterval = try values.decodeIfPresent(Int.self, forKey: .repeatInterval)
+        occurrenceAt = try values.decodeIfPresent(Date.self, forKey: .occurrenceAt)
+        generatedFrom = try values.decodeIfPresent(UUID.self, forKey: .generatedFrom)
+        recurrenceSpawnedAt = try values.decodeIfPresent(Date.self, forKey: .recurrenceSpawnedAt)
+        subtasks = try values.decodeIfPresent([TodoSubtask].self, forKey: .subtasks) ?? []
     }
 }
 
@@ -212,6 +244,14 @@ struct SavedData: Codable {
         tasks[index].completedAt = status == .completed ? now : nil
         if !save() { tasks = old }
     }
+    func setSubtaskCompleted(taskID: UUID, subtaskID: UUID, completed: Bool) {
+        guard let taskIndex = tasks.firstIndex(where: { $0.id == taskID }),
+              let subtaskIndex = tasks[taskIndex].subtasks.firstIndex(where: { $0.id == subtaskID }),
+              tasks[taskIndex].subtasks[subtaskIndex].isCompleted != completed else { return }
+        let old = tasks
+        tasks[taskIndex].subtasks[subtaskIndex].isCompleted = completed
+        if !save() { tasks = old }
+    }
     // Generate one next occurrence only when its calendar day arrives. Missed days do not create a backlog.
     func refreshRecurring(now: Date = Date(), calendar: Calendar = .current) {
         let old = tasks
@@ -230,6 +270,7 @@ struct SavedData: Codable {
             var nextTask = Todo(title: tasks[i].title, category: tasks[i].category, createdAt: now, dueAt: tasks[i].dueAt == nil ? nil : occurrence)
             nextTask.repeatRule = rule; nextTask.repeatInterval = tasks[i].repeatInterval
             nextTask.occurrenceAt = occurrence; nextTask.generatedFrom = tasks[i].id
+            nextTask.subtasks = tasks[i].subtasks.map { TodoSubtask(title: $0.title) }
             tasks[i].recurrenceSpawnedAt = now
             tasks.append(nextTask)
         }
@@ -265,7 +306,10 @@ struct SavedData: Codable {
                 let group = matching.filter { $0.category == category }
                 guard !group.isEmpty else { continue }
                 lines.append("# \(category)")
-                lines += group.map { "- \($0.title)" }
+                for task in group {
+                    lines.append("- \(task.title)")
+                    lines += task.subtasks.map { "  - [\($0.isCompleted ? "x" : " ")] \($0.title)" }
+                }
             }
             lines.append("")
         }
@@ -276,17 +320,34 @@ struct SavedData: Codable {
         var category = categories.first ?? "收件箱"
         var status: TaskStatus = .todo
         var count = 0
+        var parentIndex: Int?
         for raw in text.components(separatedBy: .newlines) {
             var line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !line.isEmpty else { continue }
+            let isIndented = raw.first == " " || raw.first == "\t"
+            if isIndented, let parentIndex, line.hasPrefix("- ") {
+                var completed = false
+                if line.hasPrefix("- [x] ") || line.hasPrefix("- [X] ") {
+                    line = String(line.dropFirst(6)); completed = true
+                } else if line.hasPrefix("- [ ] ") {
+                    line = String(line.dropFirst(6))
+                } else {
+                    line = String(line.dropFirst(2))
+                }
+                line = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !line.isEmpty { tasks[parentIndex].subtasks.append(TodoSubtask(title: line, isCompleted: completed)) }
+                continue
+            }
             if line.hasPrefix("## ") {
                 let heading = String(line.dropFirst(3))
                 status = TaskStatus.allCases.first { $0.title == heading } ?? .todo
+                parentIndex = nil
                 continue
             }
             if line.hasPrefix("# ") {
                 category = String(line.dropFirst(2)).trimmingCharacters(in: .whitespaces)
                 if !categories.contains(category) { categories.append(category) }
+                parentIndex = nil
                 continue
             }
             var itemStatus = status
@@ -301,6 +362,7 @@ struct SavedData: Codable {
             line = line.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !line.isEmpty else { continue }
             tasks.append(Todo(title: line, category: category, status: itemStatus, completedAt: itemStatus == .completed ? Date() : nil))
+            parentIndex = tasks.count - 1
             count += 1
         }
         if count > 0 { save() }
@@ -322,6 +384,7 @@ struct VisualEffect: NSViewRepresentable {
 struct TaskEditorRequest: Identifiable {
     var task: Todo
     var isNew = false
+    var focusSubtask = false
     var id: UUID { task.id }
 }
 
@@ -351,6 +414,7 @@ struct WidgetView: View {
     @AppStorage("widgetWidth") private var widgetWidth = 405.0
     @AppStorage("widgetHeight") private var widgetHeight = 560.0
     @State private var collapsedGroups: Set<String> = []
+    @State private var collapsedTasks: Set<UUID> = []
     @State private var importedCount: Int?
 
     var body: some View {
@@ -390,7 +454,7 @@ struct WidgetView: View {
         .overlay(Rectangle().stroke(noteStyle == "retro" ? Color(red: 0.44, green: 0.35, blue: 0.25).opacity(0.38) : .black.opacity(0.15), lineWidth: 1))
         .shadow(color: .black.opacity(0.14), radius: 10, x: 1, y: 5)
         .overlay { WindowResizeEdges() }
-        .sheet(item: $editing) { request in EditTaskSheet(store: store, fontLibrary: fontLibrary, task: request.task, isNew: request.isNew) }
+        .sheet(item: $editing) { request in EditTaskSheet(store: store, fontLibrary: fontLibrary, task: request.task, isNew: request.isNew, focusSubtask: request.focusSubtask) }
         .sheet(isPresented: $showImport) { ImportSheet(store: store, importedCount: $importedCount) }
         .sheet(isPresented: $showCategory) { CategorySheet(store: store, chosenCategory: $chosenCategory) }
         .sheet(isPresented: $showArchive) { ArchiveSheet(store: store, fontLibrary: fontLibrary) }
@@ -523,54 +587,101 @@ struct WidgetView: View {
     }
 
     private func taskRow(_ task: Todo) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Button {
-                store.setStatus(task, task.status == .completed ? .todo : .completed)
-            } label: {
-                Image(systemName: task.status == .completed ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 18, weight: .light))
-                    .foregroundStyle(task.status == .completed ? Color.primary.opacity(0.75) : Color.secondary.opacity(0.65))
-            }
-            .buttonStyle(.plain)
-            .help(task.status == .completed ? "恢复为待办" : "标记完成")
-            Button { editing = TaskEditorRequest(task: task) } label: {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(task.title)
-                        .font(fontLibrary.font(13.5, monospaced: true))
-                        .strikethrough(task.status == .completed || task.status == .cancelled)
-                    if let dueAt = task.dueAt {
-                        Label(dueAt.formatted(date: .abbreviated, time: .shortened), systemImage: "calendar")
-                            .font(fontLibrary.font(10))
-                            .foregroundStyle(dueAt < Date() && task.status != .completed ? Color.red.opacity(0.8) : Color.secondary)
+        VStack(alignment: .leading, spacing: 1) {
+            HStack(alignment: .top, spacing: 10) {
+                Button {
+                    store.setStatus(task, task.status == .completed ? .todo : .completed)
+                } label: {
+                    Image(systemName: task.status == .completed ? "checkmark.square.fill" : "square")
+                        .font(.system(size: 18, weight: .light))
+                        .foregroundStyle(task.status == .completed ? Color.primary.opacity(0.75) : Color.secondary.opacity(0.65))
+                }
+                .buttonStyle(.plain)
+                .help(task.status == .completed ? "恢复为待办" : "标记完成")
+                Button { editing = TaskEditorRequest(task: task) } label: {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(task.title)
+                            .font(fontLibrary.font(13.5, monospaced: true))
+                            .strikethrough(task.status == .completed || task.status == .cancelled)
+                        if let dueAt = task.dueAt {
+                            Label(dueAt.formatted(date: .abbreviated, time: .shortened), systemImage: "calendar")
+                                .font(fontLibrary.font(10))
+                                .foregroundStyle(dueAt < Date() && task.status != .completed ? Color.red.opacity(0.8) : Color.secondary)
+                        }
+                        if !task.subtasks.isEmpty {
+                            Text("子任务 \(task.subtasks.filter(\.isCompleted).count)/\(task.subtasks.count)")
+                                .font(fontLibrary.font(10))
+                                .foregroundStyle(.secondary)
+                        }
                     }
+                    .foregroundStyle(task.status == .completed || task.status == .cancelled ? Color.secondary : Color.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .foregroundStyle(task.status == .completed || task.status == .cancelled ? Color.secondary : Color.primary)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .buttonStyle(.plain)
-            .help("编辑任务与截止时间")
-            Menu {
-                Button("编辑") { editing = TaskEditorRequest(task: task) }
-                Divider()
-                ForEach(TaskStatus.allCases) { status in
-                    Button(status.title, systemImage: status.symbol) { store.setStatus(task, status) }
+                .buttonStyle(.plain)
+                .help("编辑任务、子任务与截止时间")
+                if !task.subtasks.isEmpty {
+                    Button {
+                        if collapsedTasks.contains(task.id) { collapsedTasks.remove(task.id) }
+                        else { collapsedTasks.insert(task.id) }
+                    } label: {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 10, weight: .semibold))
+                            .rotationEffect(.degrees(collapsedTasks.contains(task.id) ? -90 : 0))
+                            .frame(width: 20, height: 20)
+                    }
+                    .buttonStyle(.plain)
+                    .help(collapsedTasks.contains(task.id) ? "展开子任务" : "收起子任务")
                 }
-                Divider()
-                Button("删除", role: .destructive) { store.delete(task) }
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.secondary.opacity(0.7))
-                    .frame(width: 22, height: 20)
+                Menu {
+                    Button("编辑") { editing = TaskEditorRequest(task: task) }
+                    Button("添加子任务") { editing = TaskEditorRequest(task: task, focusSubtask: true) }
+                    Divider()
+                    ForEach(TaskStatus.allCases) { status in
+                        Button(status.title, systemImage: status.symbol) { store.setStatus(task, status) }
+                    }
+                    Divider()
+                    Button("删除", role: .destructive) { store.delete(task) }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.secondary.opacity(0.7))
+                        .frame(width: 22, height: 20)
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, 3)
+            .padding(.vertical, 5)
+            if !collapsedTasks.contains(task.id) {
+                ForEach(task.subtasks) { subtask in
+                    HStack(alignment: .top, spacing: 8) {
+                        Button {
+                            store.setSubtaskCompleted(taskID: task.id, subtaskID: subtask.id, completed: !subtask.isCompleted)
+                        } label: {
+                            Image(systemName: subtask.isCompleted ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 13, weight: .light))
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help(subtask.isCompleted ? "恢复子任务" : "完成子任务")
+                        Button { editing = TaskEditorRequest(task: task) } label: {
+                            Text(subtask.title)
+                                .font(fontLibrary.font(12.5, monospaced: true))
+                                .strikethrough(subtask.isCompleted)
+                                .foregroundStyle(subtask.isCompleted ? Color.secondary : Color.primary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.plain)
+                        .help("编辑子任务")
+                    }
+                    .padding(.leading, 32)
+                    .padding(.vertical, 3)
+                }
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.leading, 3)
-        .padding(.vertical, 5)
         .overlay(alignment: .bottom) {
             if noteStyle == "retro" {
                 Rectangle().fill(Color(red: 0.40, green: 0.33, blue: 0.25).opacity(0.20))
@@ -631,42 +742,97 @@ struct EditTaskSheet: View {
     @State private var repeatRule: RepeatRule
     @State private var repeatInterval: Int
     @State private var saveError: String?
+    @State private var subtasks: [TodoSubtask]
+    @State private var subtaskInput = ""
+    @FocusState private var subtaskInputFocused: Bool
+    let focusSubtask: Bool
 
-    init(store: TaskStore, fontLibrary: FontLibrary, task: Todo, isNew: Bool = false) {
+    init(store: TaskStore, fontLibrary: FontLibrary, task: Todo, isNew: Bool = false, focusSubtask: Bool = false) {
         self.store = store
         self.fontLibrary = fontLibrary
         self.task = task
         self.isNew = isNew
+        self.focusSubtask = focusSubtask
         _repeatRule = State(initialValue: task.repeatRule ?? .once)
         _repeatInterval = State(initialValue: task.repeatInterval ?? 2)
         _title = State(initialValue: task.title)
         _category = State(initialValue: task.category)
         _hasDueDate = State(initialValue: task.dueAt != nil)
         _dueAt = State(initialValue: task.dueAt ?? Date().addingTimeInterval(3600))
+        _subtasks = State(initialValue: task.subtasks)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(isNew ? "新建待办" : "编辑待办").font(fontLibrary.font(20, weight: .bold))
-            TextField("待办内容", text: $title)
-                .font(fontLibrary.font(14))
-            HStack {
-                Text("分组")
-                Picker("分组", selection: $category) {
-                    ForEach(store.categories, id: \.self) { Text($0).tag($0) }
-                }.labelsHidden()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    TextField("待办内容", text: $title)
+                        .font(fontLibrary.font(14))
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "checklist")
+                                .font(.system(size: 15))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 20)
+                            TextField("添加子任务", text: $subtaskInput)
+                                .font(fontLibrary.font(13))
+                                .focused($subtaskInputFocused)
+                                .onSubmit(addSubtask)
+                            Button(action: addSubtask) {
+                                Image(systemName: "plus.circle")
+                                    .font(.system(size: 20, weight: .light))
+                            }
+                            .buttonStyle(.plain)
+                            .help("添加子任务")
+                            .disabled(subtaskInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                        if !subtasks.isEmpty {
+                            VStack(alignment: .leading, spacing: 8) {
+                                ForEach($subtasks) { $subtask in
+                                    let subtaskID = subtask.id
+                                    HStack(spacing: 8) {
+                                        Text("•").frame(width: 20)
+                                        TextField("子任务内容", text: $subtask.title)
+                                            .font(fontLibrary.font(13))
+                                        Button { subtasks.removeAll { $0.id == subtaskID } } label: {
+                                            Image(systemName: "minus.circle")
+                                                .font(.system(size: 20, weight: .light))
+                                        }
+                                        .buttonStyle(.plain)
+                                        .help("删除子任务")
+                                    }
+                                }
+                            }
+                            .padding(.leading, 28)
+                            .overlay(alignment: .leading) {
+                                Rectangle()
+                                    .fill(.secondary.opacity(0.45))
+                                    .frame(width: 1)
+                                    .padding(.leading, 10)
+                            }
+                        }
+                    }
+                    HStack {
+                        Text("分组")
+                        Picker("分组", selection: $category) {
+                            ForEach(store.categories, id: \.self) { Text($0).tag($0) }
+                        }.labelsHidden()
+                    }
+                    Toggle("设置截止时间", isOn: $hasDueDate)
+                    if hasDueDate {
+                        DatePicker("截止时间", selection: $dueAt, displayedComponents: [.date, .hourAndMinute])
+                            .datePickerStyle(.compact)
+                    }
+                    Picker("重复", selection: $repeatRule) {
+                        ForEach(RepeatRule.allCases) { Text($0.title).tag($0) }
+                    }
+                    if repeatRule == .interval { Stepper("每 \(repeatInterval) 天", value: $repeatInterval, in: 1...365) }
+                    if repeatRule != .once { Text("完成后，下一次到期当天自动加入待办。工作日为周一至周五。")
+                        .font(.system(size: 11)).foregroundStyle(.secondary) }
+                }
             }
-            Toggle("设置截止时间", isOn: $hasDueDate)
-            if hasDueDate {
-                DatePicker("截止时间", selection: $dueAt, displayedComponents: [.date, .hourAndMinute])
-                    .datePickerStyle(.compact)
-            }
-            Picker("重复", selection: $repeatRule) {
-                ForEach(RepeatRule.allCases) { Text($0.title).tag($0) }
-            }
-            if repeatRule == .interval { Stepper("每 \(repeatInterval) 天", value: $repeatInterval, in: 1...365) }
-            if repeatRule != .once { Text("完成后，下一次到期当天自动加入待办。工作日为周一至周五。")
-                .font(.system(size: 11)).foregroundStyle(.secondary) }
+            .frame(height: min(300 + CGFloat(subtasks.count) * 30 + (hasDueDate ? 30 : 0), 500))
             if let saveError { Text(saveError).foregroundStyle(.red).font(.caption) }
             HStack {
                 if !isNew { Button("删除", role: .destructive) { store.delete(task); dismiss() } }
@@ -677,6 +843,12 @@ struct EditTaskSheet: View {
                     edited.title = title; edited.category = category; edited.dueAt = hasDueDate ? dueAt : nil
                     edited.repeatRule = repeatRule; edited.repeatInterval = repeatInterval
                     edited.occurrenceAt = hasDueDate ? dueAt : Date()
+                    edited.subtasks = subtasks.compactMap { subtask in
+                        let clean = subtask.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                        return clean.isEmpty ? nil : TodoSubtask(id: subtask.id, title: clean, isCompleted: subtask.isCompleted)
+                    }
+                    let pending = subtaskInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !pending.isEmpty { edited.subtasks.append(TodoSubtask(title: pending)) }
                     if store.saveEdited(edited) { dismiss() } else { saveError = "保存失败，请检查磁盘空间后重试。" }
                 }
                     .keyboardShortcut(.defaultAction)
@@ -684,7 +856,16 @@ struct EditTaskSheet: View {
             }
         }
         .padding(24)
-        .frame(width: 365)
+        .frame(width: 390)
+        .onAppear { if focusSubtask { subtaskInputFocused = true } }
+    }
+
+    private func addSubtask() {
+        let clean = subtaskInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        subtasks.append(TodoSubtask(title: clean))
+        subtaskInput = ""
+        subtaskInputFocused = true
     }
 }
 

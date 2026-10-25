@@ -110,3 +110,9 @@ Header labels are single-line fixed-size; 40-point controls and a 44 × 40 colla
 ## 2.3.1 immediate completion
 
 The Todo tab now shows only todo and pending tasks. Completed tasks move immediately to the Completed tab, where unchecking restores them. Removed the redundant day-change refresh; recurrence and completion timestamps are unchanged. All 127 native checks pass, including immediate removal, retained history and restoration.
+
+## 2.4 daily subtasks
+
+Daily Todo embeds an optional-on-read `subtasks` array of stable UUIDs, titles and independent completion flags. Older records decode to an empty array. Creation and editing use the same sheet-local draft with plus/minus controls; cancellation leaves stored tasks unchanged. The list shows a completion count, collapsible child rows and smaller circle controls. Subtask completion uses the same atomic-save rollback as parent status changes and does not change parent status.
+
+New recurring occurrences copy subtask titles with fresh IDs and unchecked state. Text export writes indented Markdown checkboxes; import attaches indented children to the preceding parent. EventKit continues syncing parent tasks only and preserves local subtasks when applying reminder changes. All 135 native checks pass, covering persistence, restart, independent completion, text roundtrip, recurrence reset and existing legacy-data compatibility.
