@@ -24,7 +24,8 @@
 | --- | --- |
 | 桌面便签 | 直角外框、内部圆角；支持置顶、拖动与边缘缩放 |
 | 收起圆点 | 纯色或细纸纹，可拖动，自动收起到最近的屏幕角落 |
-| 待办与完成记录 | 当天完成仍保留，可从“已完成”恢复误点 |
+| 待办与完成记录 | 完成后立即移入“已完成”，可恢复误点 |
+| 子任务 | 分类内的任务可拆成子任务，独立勾选并显示进度 |
 | 截止与重复 | 一次性、每天、工作日或每 N 天重复 |
 | 长期任务 | 目标 → 阶段 → 任务，同名分类、Markdown 说明与成果记录 |
 | AI 计划 | 复制提示词、粘贴解析、自定义 API、拉取模型和预览修改 |
@@ -37,11 +38,11 @@
 
 自动更新从本仓库的 GitHub Releases 获取更新源和安装包，并校验签名。请从上方固定入口下载，不需要寻找某个功能分支里的 ZIP。
 
-[详细使用说明与构建方法](https://github.com/Liuuuuu17/mint-todo/blob/v2.3/USER_GUIDE.md) · [开发文档](https://github.com/Liuuuuu17/mint-todo/blob/v2.3/DEVELOPMENT.md)
+[详细使用说明与构建方法](https://github.com/Liuuuuu17/mint-todo/blob/v2.4/USER_GUIDE.md) · [开发文档](https://github.com/Liuuuuu17/mint-todo/blob/v2.4/DEVELOPMENT.md)
 
 ## 从源码构建
 
-最新发布源码见 [v2.3](https://github.com/Liuuuuu17/mint-todo/tree/v2.3)。安装 Xcode 命令行工具后，在源码目录运行：
+最新发布源码见 [v2.4](https://github.com/Liuuuuu17/mint-todo/tree/v2.4)。安装 Xcode 命令行工具后，在源码目录运行：
 
 ```sh
 zsh build.sh
