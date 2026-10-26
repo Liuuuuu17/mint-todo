@@ -31,7 +31,9 @@ codesign --force --sign - "$APP"
 codesign --verify --deep --strict "$APP"
 rm -f "$OUTPUT_DIR/MintTodo-macOS.zip"
 ditto -c -k --keepParent "$APP" "$OUTPUT_DIR/MintTodo-macOS.zip"
+zsh make-dmg.sh "$APP" "$OUTPUT_DIR/MintTodo-macOS.dmg"
 if [[ -n "${ORBTODO_BUILD_PATH_FILE:-}" ]]; then
   print -r -- "$APP" > "$ORBTODO_BUILD_PATH_FILE"
 fi
 echo "Built: $OUTPUT_DIR/MintTodo-macOS.zip"
+echo "Built: $OUTPUT_DIR/MintTodo-macOS.dmg"

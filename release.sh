@@ -12,5 +12,10 @@ mkdir -p "$RELEASE_OUTPUT"
 ORBTODO_OUTPUT_DIR="$RELEASE_OUTPUT" zsh build.sh
 # This version directory owns one freshly signed feed; never reuse stale signatures after a rebuild.
 rm -f "$RELEASE_OUTPUT/appcast.xml"
-"$SPARKLE_DIR/bin/generate_appcast" --account com.codex.orbtodo.release --maximum-deltas 0 --download-url-prefix "https://github.com/Liuuuuu17/mint-todo/releases/download/v$RELEASE_VERSION/" --link 'https://github.com/Liuuuuu17/mint-todo/releases/latest' "$RELEASE_OUTPUT"
-print -r -- "Publish tag v$RELEASE_VERSION and upload MintTodo-macOS.zip and appcast.xml from $RELEASE_OUTPUT to the same GitHub Release. Mark it as latest. Never edit signed appcast/archive bytes after signing."
+# Only the ZIP is an automatic-update archive. Keep the DMG out of Sparkle's scan.
+APPCAST_DIR="$(mktemp -d /private/tmp/minttodo-appcast.XXXXXX)"
+trap 'rm -rf "$APPCAST_DIR"' EXIT
+cp "$RELEASE_OUTPUT/MintTodo-macOS.zip" "$APPCAST_DIR/MintTodo-macOS.zip"
+"$SPARKLE_DIR/bin/generate_appcast" --account com.codex.orbtodo.release --maximum-deltas 0 --download-url-prefix "https://github.com/Liuuuuu17/mint-todo/releases/download/v$RELEASE_VERSION/" --link 'https://github.com/Liuuuuu17/mint-todo/releases/latest' "$APPCAST_DIR"
+cp "$APPCAST_DIR/appcast.xml" "$RELEASE_OUTPUT/appcast.xml"
+print -r -- "Publish tag v$RELEASE_VERSION and upload MintTodo-macOS.dmg, MintTodo-macOS.zip and appcast.xml from $RELEASE_OUTPUT to the same GitHub Release. Mark it as latest. Never edit signed appcast/archive bytes after signing."

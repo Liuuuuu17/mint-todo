@@ -51,7 +51,7 @@ There is no two-file transaction between goals and daily tasks. Recoverability c
 
 ## Build and test
 
-- `zsh build.sh`: universal app archive in `dist/MintTodo-macOS.zip`, or set `ORBTODO_OUTPUT_DIR` for a separate destination.
+- `zsh build.sh`: universal app ZIP for Sparkle updates and DMG for manual installation in `dist/`, or set `ORBTODO_OUTPUT_DIR` for a separate destination.
 - `zsh test.sh`: compile actual production sources into an isolated native test executable. It does not load user tasks or contact a real API / EventKit database. A uniquely named temporary Keychain item is created, updated, read and deleted.
 - For UI QA, launch a separate preview bundle with `MINTTODO_DATA_DIR=/absolute/test/folder MINTTODO_TEST_MODE=1`. This disables system Reminders access and isolates daily/goal files. Never set these flags for the normal installed app.
 
@@ -103,7 +103,7 @@ AppUpdater.swift wraps Sparkle 2.10.0 SPUStandardUpdaterController. Info.plist s
 
 setup-sparkle.sh downloads the exact official archive with a pinned SHA-256. build.sh embeds the upstream-signed universal framework preserving symlinks/signatures, includes its complete license and signs the containing app ad hoc. The app is not Developer ID signed/notarized; Gatekeeper/translocation and non-writable locations may require initial manual installation or authorization. Existing data stays outside the bundle.
 
-release.sh verifies that Keychain account com.codex.orbtodo.release matches SUPublicEDKey, builds the app, signs its archive and feed using generate_appcast. Never export/commit/upload the private key. Keep that Keychain available for future releases. Publish v<CFBundleShortVersionString> against the source branch and attach the unmodified MintTodo-macOS.zip and appcast.xml to a GitHub Release marked latest. Attach MintTodo-project.zip for optional full-source downloads. The README's stable latest/download links do not change between releases. Increment both CFBundleVersion and version label for new releases. Do not replace signed bytes in an existing tag.
+release.sh verifies that Keychain account com.codex.orbtodo.release matches SUPublicEDKey, builds the app and both distribution formats, then signs the ZIP update archive and feed using generate_appcast. The DMG is excluded from Sparkle's appcast scan. Never export/commit/upload the private key. Keep that Keychain available for future releases. Publish v<CFBundleShortVersionString> against the source branch and attach MintTodo-macOS.dmg for manual downloads plus the unmodified MintTodo-macOS.zip and appcast.xml for automatic updates to a GitHub Release marked latest. Attach MintTodo-project.zip for optional full-source downloads. The README's stable latest/download links do not change between releases. Increment both CFBundleVersion and version label for new releases. Do not replace signed bytes in an existing tag.
 
 Header labels are single-line fixed-size; 40-point controls and a 44 × 40 collapse hit area fit the 320-point minimum width. The edge overlay passes header control events through except the outermost 3 points. Unpublished release feeds are regenerated after each rebuild so signatures always match the archive.
 

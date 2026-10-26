@@ -4,3 +4,4 @@ work/
 
 .build-deps/
 release/
+dist/*.dmg

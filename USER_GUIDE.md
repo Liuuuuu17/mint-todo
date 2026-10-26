@@ -2,11 +2,11 @@
 
 一个 macOS 桌面悬浮待办应用。支持 Apple Silicon 和 Intel Mac，要求 macOS 13 或更新版本。
 
-[下载 Mint Todo for Mac](https://github.com/Liuuuuu17/mint-todo/releases/latest/download/MintTodo-macOS.zip)
+[下载 Mint Todo for Mac（DMG）](https://github.com/Liuuuuu17/mint-todo/releases/latest/download/MintTodo-macOS.dmg)
 
 ## 安装与使用
 
-1. 解压 `MintTodo-macOS.zip`，将 **Mint Todo.app** 拖到“应用程序”文件夹，双击打开。
+1. 打开 `MintTodo-macOS.dmg`，将 **Mint Todo.app** 拖到“Applications”文件夹，双击打开。
 2. 在窗口底部选分组，输入待办，按回车打开详情；在“添加子任务”输入行输入内容，点击右侧 `+` 即可逐条添加，再创建任务。已有任务可点开详情或在 `···` 菜单中选“添加子任务”，继续添加；详情中点子任务右侧的 `−` 可移除。列表中可直接勾选子任务，完成进度显示在主任务下方。主任务与子任务的完成状态相互独立。
 3. 点任务本身可以编辑内容、分组和截止时间。设置截止时间后，日期会显示在任务下方。
 4. 点方框标记完成；点任务右侧的 `···` 可以改为“进行中”、完成、取消或删除。主界面为“待办 / 已完成 / 长期任务”。完成的事项立即从待办列表移入“已完成”，在“已完成”中再次点击方框即可恢复。原“进行中”的任务仍显示在待办中，取消任务可从设置的归档恢复。
@@ -117,6 +117,6 @@
 
 请将应用放到可写的“应用程序”文件夹运行，不要直接在只读磁盘或压缩包预览中运行。任务、字体、背景、提醒事项关联和 AI 密钥不在应用包里，更新不会主动清除这些内容。首次在其他 Mac 打开仍可能遇到系统来源确认；此应用使用本机签名，未经过 Apple 公证。
 
-固定下载入口：https://github.com/Liuuuuu17/mint-todo/releases/latest/download/MintTodo-macOS.zip
+固定下载入口：https://github.com/Liuuuuu17/mint-todo/releases/latest/download/MintTodo-macOS.dmg
 
 标题 MINT / NOTES 始终保持单行固定字号，最小宽度下也不折行。顶部三个按钮使用完整矩形热区；收起按钮为 44 × 40 pt，避开缩放边缘的抢占。
