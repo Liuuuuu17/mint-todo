@@ -40,7 +40,7 @@ GitHub 自动提供的“Source code (zip)”是源码包；安装应用请使�
 
 自动更新从本仓库的 GitHub Releases 获取更新源和安装包，并校验签名。请从上方固定入口下载，不需要寻找某个功能分支里的安装包。
 
-[详细使用说明与构建方法](https://github.com/Liuuuuu17/mint-todo/blob/v2.4/USER_GUIDE.md) · [开发文档](https://github.com/Liuuuuu17/mint-todo/blob/v2.4/DEVELOPMENT.md)
+[详细使用说明与构建方法](https://github.com/Liuuuuu17/mint-todo/blob/feature/goals-and-ai-planning/USER_GUIDE.md) · [开发文档](https://github.com/Liuuuuu17/mint-todo/blob/feature/goals-and-ai-planning/DEVELOPMENT.md)
 
 ## 从源码构建
 
