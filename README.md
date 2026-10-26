@@ -6,13 +6,15 @@
 
 ## 下载
 
-### [↓ 直接下载 Mint Todo for Mac](https://github.com/Liuuuuu17/mint-todo/releases/latest/download/MintTodo-macOS.zip)
+### [↓ 直接下载 Mint Todo for Mac（DMG）](https://github.com/Liuuuuu17/mint-todo/releases/latest/download/MintTodo-macOS.dmg)
 
-[版本说明](https://github.com/Liuuuuu17/mint-todo/releases/latest) · [完整项目包](https://github.com/Liuuuuu17/mint-todo/releases/latest/download/MintTodo-project.zip)
+[版本说明](https://github.com/Liuuuuu17/mint-todo/releases/latest)
 
-1. 解压下载的 ZIP，将 **Mint Todo.app** 拖入“应用程序”。
+1. 打开下载的 DMG，将 **Mint Todo.app** 拖到“Applications”文件夹。
 2. 如果已安装旧版，先退出，再替换一次。
 3. 打开 App，输入事项并按回车，设置截止时间和重复方式。
+
+GitHub 自动提供的“Source code (zip)”是源码包；安装应用请使用上方 DMG 下载链接。
 
 **2.3 起支持自动更新。** 默认自动检查和下载新版，退出后安装，不需要每次重新下载、拖入替换。设置 → 软件更新可以关闭自动更新或立即检查。
 
@@ -36,7 +38,7 @@
 
 任务保存在本机 `~/Library/Application Support/OrbTodo/`。字体、背景和设置保存在应用外；替换或自动更新应用不会主动清除它们。可选 AI 的密钥保存在 macOS 钥匙串；只有主动使用 AI 功能时才发送相应计划内容。
 
-自动更新从本仓库的 GitHub Releases 获取更新源和安装包，并校验签名。请从上方固定入口下载，不需要寻找某个功能分支里的 ZIP。
+自动更新从本仓库的 GitHub Releases 获取更新源和安装包，并校验签名。请从上方固定入口下载，不需要寻找某个功能分支里的安装包。
 
 [详细使用说明与构建方法](https://github.com/Liuuuuu17/mint-todo/blob/v2.4/USER_GUIDE.md) · [开发文档](https://github.com/Liuuuuu17/mint-todo/blob/v2.4/DEVELOPMENT.md)
 
