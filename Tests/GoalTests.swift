@@ -36,6 +36,7 @@ final class MockAPIProtocol: URLProtocol {
             try revisionTests()
             try resizeTests()
             try dailyWorkflowTests()
+            try NaturalTimeTests.run { condition, name in try check(condition, name) }
             try subtaskTests()
             try dockingTests()
             try await apiTests()
