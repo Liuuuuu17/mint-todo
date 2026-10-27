@@ -31,8 +31,12 @@ private struct FontManifest: Codable {
     init() {
         let savedSize = UserDefaults.standard.double(forKey: "taskFontSize")
         textSize = savedSize > 0 ? min(max(savedSize, 10), 24) : 13.5
+        #if MINT_WIDGET_TRIAL
+        let base = MintWidgetFiles.defaultFolder
+        #else
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("OrbTodo", isDirectory: true)
+        #endif
         folder = base.appendingPathComponent("Fonts", isDirectory: true)
         manifestURL = base.appendingPathComponent("fonts.json")
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -153,8 +157,69 @@ struct SettingsSheet: View {
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-            UpdateSettings()
+            AppearanceSettings()
             Divider()
+            RemindersSettings(sync: reminderSync)
+            Divider()
+            VStack(alignment: .leading, spacing: 8) {
+                Text("AI 设置与提示词").font(.system(size: 14, weight: .semibold))
+                Button("AI 设置与计划提示词…") { showAISettings = true }
+            }
+            Divider()
+            fontSettings
+            Divider()
+            VStack(alignment: .leading, spacing: 8) {
+                Text("窗口大小").font(.system(size: 12, weight: .medium))
+                HStack {
+                    Text("宽度").frame(width: 52, alignment: .leading)
+                    Slider(value: $widgetWidth, in: 320...900)
+                        .onChange(of: widgetWidth) { value in onResize(CGSize(width: value, height: widgetHeight)) }
+                    Text("\(Int(widgetWidth))").frame(width: 40, alignment: .trailing)
+                }
+                HStack {
+                    Text("高度").frame(width: 52, alignment: .leading)
+                    Slider(value: $widgetHeight, in: 380...900)
+                        .onChange(of: widgetHeight) { value in onResize(CGSize(width: widgetWidth, height: value)) }
+                    Text("\(Int(widgetHeight))").frame(width: 40, alignment: .trailing)
+                }
+                Text("也可以拖动便签的四边或四角调整大小。")
+                    .font(.system(size: 10)).foregroundStyle(.secondary)
+            }
+            .font(.system(size: 11))
+            Divider()
+            HStack {
+                Text("整个窗口透明度").font(.system(size: 12))
+                Slider(value: $opacity, in: 0.72...1)
+                    .onChange(of: opacity) { value in onOpacity(value) }
+            }
+            HStack {
+                Button("管理分组") { onCategory() }
+                Button("查看归档") { onArchive() }
+                Spacer()
+            }
+            HStack {
+                Button("复制清单") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(store.textExport(), forType: .string)
+                }
+                Button("批量导入") { onImport() }
+                Button("打开数据文件") { NSWorkspace.shared.activateFileViewerSelecting([store.fileURL]) }
+                Spacer()
+            }
+            .font(.system(size: 11))
+            #if !MINT_WIDGET_TRIAL
+            Divider()
+            UpdateSettings()
+            #endif
+                }
+            }
+        }
+        .padding(24)
+        .frame(width: 440, height: 570)
+        .sheet(isPresented: $showAISettings) { AISettingsView() }
+    }
+
+    private var fontSettings: some View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("字体").font(.system(size: 14, weight: .semibold))
                 HStack {
@@ -233,59 +298,6 @@ struct SettingsSheet: View {
                     }
                 }
             }
-
-            Divider()
-            Button("AI 设置与计划提示词…") { showAISettings = true }
-            Divider()
-            AppearanceSettings()
-            Divider()
-            RemindersSettings(sync: reminderSync)
-            Divider()
-            VStack(alignment: .leading, spacing: 8) {
-                Text("窗口大小").font(.system(size: 12, weight: .medium))
-                HStack {
-                    Text("宽度").frame(width: 52, alignment: .leading)
-                    Slider(value: $widgetWidth, in: 320...900)
-                        .onChange(of: widgetWidth) { value in onResize(CGSize(width: value, height: widgetHeight)) }
-                    Text("\(Int(widgetWidth))").frame(width: 40, alignment: .trailing)
-                }
-                HStack {
-                    Text("高度").frame(width: 52, alignment: .leading)
-                    Slider(value: $widgetHeight, in: 380...900)
-                        .onChange(of: widgetHeight) { value in onResize(CGSize(width: widgetWidth, height: value)) }
-                    Text("\(Int(widgetHeight))").frame(width: 40, alignment: .trailing)
-                }
-                Text("也可以拖动便签的四边或四角调整大小。")
-                    .font(.system(size: 10)).foregroundStyle(.secondary)
-            }
-            .font(.system(size: 11))
-            Divider()
-            HStack {
-                Text("整个窗口透明度").font(.system(size: 12))
-                Slider(value: $opacity, in: 0.72...1)
-                    .onChange(of: opacity) { value in onOpacity(value) }
-            }
-            HStack {
-                Button("管理分组") { onCategory() }
-                Button("查看归档") { onArchive() }
-                Spacer()
-            }
-            HStack {
-                Button("复制清单") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(store.textExport(), forType: .string)
-                }
-                Button("批量导入") { onImport() }
-                Button("打开数据文件") { NSWorkspace.shared.activateFileViewerSelecting([store.fileURL]) }
-                Spacer()
-            }
-            .font(.system(size: 11))
-                }
-            }
-        }
-        .padding(24)
-        .frame(width: 440, height: 570)
-        .sheet(isPresented: $showAISettings) { AISettingsView() }
     }
 
     private func chooseFontFiles() {

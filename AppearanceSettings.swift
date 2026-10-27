@@ -18,6 +18,12 @@ enum AppearanceColor {
     }
 }
 
+enum NoteFrameAppearance {
+    static func shape(for style: String) -> RoundedRectangle {
+        return RoundedRectangle(cornerRadius: style == "rounded" ? 18 : 0, style: .continuous)
+    }
+}
+
 struct AppearanceBackground: View {
     @AppStorage("appearanceMode") private var mode = "glass"
     @AppStorage("appearanceColor") private var colorHex = "#F0F0FA"
@@ -27,7 +33,8 @@ struct AppearanceBackground: View {
 
     @AppStorage("noteStyle") private var noteStyle = "minimal"
     @AppStorage("notePaper") private var paper = "cream"
-    private let shape = Rectangle()
+    @AppStorage("noteCornerStyle") private var cornerStyle = "square"
+    private var shape: RoundedRectangle { NoteFrameAppearance.shape(for: cornerStyle) }
 
     var body: some View {
         ZStack {
@@ -148,6 +155,7 @@ struct CollapsedOrbView: View {
 }
 
 struct AppearanceSettings: View {
+    @AppStorage("noteCornerStyle") private var cornerStyle = "square"
     @AppStorage("noteStyle") private var noteStyle = "minimal"
     @AppStorage("notePaper") private var paper = "cream"
     @AppStorage("appearanceMode") private var mode = "glass"
@@ -165,7 +173,10 @@ struct AppearanceSettings: View {
                 Text("简约便签").tag("minimal")
                 Text("复古纸签").tag("retro")
             }.pickerStyle(.segmented)
-            Text("外框为直角，分类栏、输入框和内部卡片保留圆角。").font(.system(size: 10)).foregroundStyle(.secondary)
+            Picker("边缘形状", selection: $cornerStyle) {
+                Text("直角").tag("square")
+                Text("圆角").tag("rounded")
+            }.pickerStyle(.segmented)
             if noteStyle == "retro" {
                 Picker("纸张色调", selection: $paper) {
                     Text("奶油横线").tag("cream")
@@ -180,7 +191,9 @@ struct AppearanceSettings: View {
                             Text("把今天写在纸上").font(.system(size: 19, weight: .medium, design: .serif))
                             Text("暖纸色 · 细横线 · 轻纸纹").font(.system(size: 11)).foregroundStyle(.secondary)
                         }.padding(18).foregroundStyle(Color(red: 0.24, green: 0.20, blue: 0.16))
-                    }.frame(height: 110).overlay(Rectangle().stroke(.black.opacity(0.15), lineWidth: 1))
+                    }.frame(height: 110)
+                    .clipShape(NoteFrameAppearance.shape(for: cornerStyle))
+                    .overlay(NoteFrameAppearance.shape(for: cornerStyle).stroke(.black.opacity(0.15), lineWidth: 1))
             } else {
             Picker("背景效果", selection: $mode) {
                 Text("玻璃").tag("glass")

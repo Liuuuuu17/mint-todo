@@ -12,6 +12,7 @@ private struct GoalFile: Codable {
     let fileURL: URL
     let backupURL: URL
     let daily: TaskStore
+    var onChange: (() -> Void)?
     private var reconciling = false
 
     init(daily: TaskStore, folder: URL? = nil) {
@@ -44,6 +45,7 @@ private struct GoalFile: Codable {
             }
             try data.write(to: fileURL, options: .atomic)
             goals = candidate
+            onChange?()
             return true
         } catch { errorMessage = "目标未保存：\(error.localizedDescription)"; return false }
     }

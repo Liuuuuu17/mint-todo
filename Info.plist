@@ -9,9 +9,9 @@
 	<key>CFBundleIdentifier</key>
 	<string>com.codex.orbtodo</string>
 	<key>CFBundleVersion</key>
-	<string>13</string>
+	<string>14</string>
 	<key>CFBundleShortVersionString</key>
-	<string>2.4</string>
+	<string>2.5</string>
 	<key>CFBundleExecutable</key>
 	<string>MintTodo</string>
 	<key>CFBundleIconFile</key>
@@ -35,6 +35,10 @@
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<key>SUAutomaticallyUpdate</key>
+	<false/>
+	<key>SUAllowsAutomaticUpdates</key>
+	<false/>
+	<key>SUShowReleaseNotes</key>
 	<true/>
 	<key>SUVerifyUpdateBeforeExtraction</key>
 	<true/>

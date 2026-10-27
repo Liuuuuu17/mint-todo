@@ -49,6 +49,8 @@ struct Todo: Identifiable, Codable, Equatable {
     var status: TaskStatus = .todo
     var createdAt: Date = Date()
     var dueAt: Date? = nil
+    var scheduledStartAt: Date? = nil
+    var dueDateOnly: Bool? = nil
     var goalTaskID: UUID? = nil
     var completedAt: Date? = nil
     var repeatRule: RepeatRule? = nil
@@ -65,7 +67,7 @@ struct Todo: Identifiable, Codable, Equatable {
 
 extension Todo {
     private enum CodingKeys: String, CodingKey {
-        case id, title, category, status, createdAt, dueAt, goalTaskID, completedAt
+        case id, title, category, status, createdAt, dueAt, scheduledStartAt, dueDateOnly, goalTaskID, completedAt
         case repeatRule, repeatInterval, occurrenceAt, generatedFrom, recurrenceSpawnedAt, subtasks
     }
 
@@ -77,6 +79,8 @@ extension Todo {
         status = try values.decodeIfPresent(TaskStatus.self, forKey: .status) ?? .todo
         createdAt = try values.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
         dueAt = try values.decodeIfPresent(Date.self, forKey: .dueAt)
+        scheduledStartAt = try values.decodeIfPresent(Date.self, forKey: .scheduledStartAt)
+        dueDateOnly = try values.decodeIfPresent(Bool.self, forKey: .dueDateOnly)
         goalTaskID = try values.decodeIfPresent(UUID.self, forKey: .goalTaskID)
         completedAt = try values.decodeIfPresent(Date.self, forKey: .completedAt)
         repeatRule = try values.decodeIfPresent(RepeatRule.self, forKey: .repeatRule)
@@ -104,8 +108,13 @@ struct SavedData: Codable {
     private var watchTimer: Timer?
 
     init(folder override: URL? = nil, watch: Bool = true) {
-        let folder = override ?? ProcessInfo.processInfo.environment["MINTTODO_DATA_DIR"].map { URL(fileURLWithPath: $0) } ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        #if MINT_WIDGET_TRIAL
+        let defaultFolder = MintWidgetFiles.defaultFolder
+        #else
+        let defaultFolder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("OrbTodo", isDirectory: true)
+        #endif
+        let folder = override ?? ProcessInfo.processInfo.environment["MINTTODO_DATA_DIR"].map { URL(fileURLWithPath: $0) } ?? defaultFolder
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         fileURL = folder.appendingPathComponent("tasks.json")
         if let data = try? Data(contentsOf: fileURL),
@@ -271,6 +280,10 @@ struct SavedData: Codable {
             nextTask.repeatRule = rule; nextTask.repeatInterval = tasks[i].repeatInterval
             nextTask.occurrenceAt = occurrence; nextTask.generatedFrom = tasks[i].id
             nextTask.subtasks = tasks[i].subtasks.map { TodoSubtask(title: $0.title) }
+            nextTask.dueDateOnly = tasks[i].dueDateOnly
+            if let start = tasks[i].scheduledStartAt, let due = tasks[i].dueAt, nextTask.dueAt != nil {
+                nextTask.scheduledStartAt = occurrence.addingTimeInterval(start.timeIntervalSince(due))
+            }
             tasks[i].recurrenceSpawnedAt = now
             tasks.append(nextTask)
         }
@@ -417,6 +430,17 @@ struct WidgetView: View {
     @State private var collapsedTasks: Set<UUID> = []
     @State private var importedCount: Int?
 
+    @AppStorage("noteCornerStyle") private var cornerStyle = "square"
+    private var frameShape: RoundedRectangle { NoteFrameAppearance.shape(for: cornerStyle) }
+
+    private var headerTitle: String {
+        #if MINT_WIDGET_TRIAL
+        return "MINT / TRIAL"
+        #else
+        return noteStyle == "retro" ? "MINT / NOTES" : "MINT TODO"
+        #endif
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -450,8 +474,8 @@ struct WidgetView: View {
             AppearanceBackground()
         }
         .environment(\.colorScheme, noteStyle == "retro" ? .light : systemColorScheme)
-        .clipShape(Rectangle())
-        .overlay(Rectangle().stroke(noteStyle == "retro" ? Color(red: 0.44, green: 0.35, blue: 0.25).opacity(0.38) : .black.opacity(0.15), lineWidth: 1))
+        .clipShape(frameShape)
+        .overlay(frameShape.stroke(noteStyle == "retro" ? Color(red: 0.44, green: 0.35, blue: 0.25).opacity(0.38) : .black.opacity(0.15), lineWidth: 1))
         .shadow(color: .black.opacity(0.14), radius: 10, x: 1, y: 5)
         .overlay { WindowResizeEdges() }
         .sheet(item: $editing) { request in EditTaskSheet(store: store, fontLibrary: fontLibrary, task: request.task, isNew: request.isNew, focusSubtask: request.focusSubtask) }
@@ -478,7 +502,7 @@ struct WidgetView: View {
 
     private var header: some View {
         HStack(spacing: 4) {
-            Text(noteStyle == "retro" ? "MINT / NOTES" : "MINT TODO")
+            Text(headerTitle)
                 .font(.system(size: 11, weight: .semibold, design: .monospaced)).tracking(2)
                 .lineLimit(1).fixedSize(horizontal: true, vertical: true)
                 .overlay { WindowDragSurface(click: onGoals) }
@@ -604,7 +628,7 @@ struct WidgetView: View {
                             .font(fontLibrary.font(13.5, monospaced: true))
                             .strikethrough(task.status == .completed || task.status == .cancelled)
                         if let dueAt = task.dueAt {
-                            Label(dueAt.formatted(date: .abbreviated, time: .shortened), systemImage: "calendar")
+                            Label(NaturalTaskTime(start: task.scheduledStartAt, end: dueAt, dateOnly: task.dueDateOnly == true).label(), systemImage: "calendar")
                                 .font(fontLibrary.font(10))
                                 .foregroundStyle(dueAt < Date() && task.status != .completed ? Color.red.opacity(0.8) : Color.secondary)
                         }
@@ -738,6 +762,13 @@ struct EditTaskSheet: View {
     @State private var category: String
     @State private var hasDueDate: Bool
     @State private var dueAt: Date
+    @State private var scheduledStartAt: Date
+    @State private var hasTimeRange: Bool
+    @State private var dateOnly: Bool
+    private let recognitionDate = Date()
+    @State private var originalTimeInput: String?
+    @State private var extractedTime: NaturalTaskTime?
+    private var detectedTime: NaturalTaskTime? { NaturalTaskTime.parse(title, now: recognitionDate) }
     let isNew: Bool
     @State private var repeatRule: RepeatRule
     @State private var repeatInterval: Int
@@ -759,6 +790,18 @@ struct EditTaskSheet: View {
         _category = State(initialValue: task.category)
         _hasDueDate = State(initialValue: task.dueAt != nil)
         _dueAt = State(initialValue: task.dueAt ?? Date().addingTimeInterval(3600))
+        let extraction = isNew && task.dueAt == nil ? NaturalTaskTime.extract(task.title) : nil
+        let detected = extraction?.time
+        _originalTimeInput = State(initialValue: extraction == nil ? nil : task.title)
+        _extractedTime = State(initialValue: detected)
+        if let extraction { _title = State(initialValue: extraction.title) }
+        if let detected {
+            _hasDueDate = State(initialValue: true)
+            _dueAt = State(initialValue: detected.end)
+        }
+        _scheduledStartAt = State(initialValue: task.scheduledStartAt ?? detected?.start ?? Date())
+        _hasTimeRange = State(initialValue: task.scheduledStartAt != nil || detected?.start != nil)
+        _dateOnly = State(initialValue: task.dueDateOnly ?? detected?.dateOnly ?? false)
         _subtasks = State(initialValue: task.subtasks)
     }
 
@@ -769,6 +812,44 @@ struct EditTaskSheet: View {
                 VStack(alignment: .leading, spacing: 16) {
                     TextField("待办内容", text: $title)
                         .font(fontLibrary.font(14))
+                    if let detected = detectedTime {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Label("识别到：" + detected.label(), systemImage: "calendar.badge.clock")
+                                .font(.system(size: 12))
+                            Button("提取时间并整理标题") {
+                                if let extraction = NaturalTaskTime.extract(title, now: recognitionDate) {
+                                    originalTimeInput = title
+                                    title = extraction.title
+                                    extractedTime = extraction.time
+                                    hasDueDate = true
+                                    dueAt = extraction.time.end
+                                    dateOnly = extraction.time.dateOnly
+                                    hasTimeRange = extraction.time.start != nil
+                                    scheduledStartAt = extraction.time.start ?? extraction.time.end
+                                }
+                            }
+                            .font(.system(size: 11))
+                        }
+                        .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.accentColor.opacity(0.08)))
+                    }
+                    if detectedTime == nil, extractedTime != nil, let originalTimeInput {
+                        VStack(alignment: .leading, spacing: 6) {
+                            if hasDueDate {
+                                Label("已提取：" + NaturalTaskTime(start: !dateOnly && hasTimeRange ? scheduledStartAt : nil, end: dueAt, dateOnly: dateOnly).label(), systemImage: "calendar.badge.clock")
+                            }
+                            Button("还原标题") {
+                                title = originalTimeInput
+                                self.originalTimeInput = nil
+                                extractedTime = nil
+                            }
+                        }
+                        .font(.system(size: 12))
+                        .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.accentColor.opacity(0.08)))
+                    }
+                    Text("输入“周三团建”或“明天下午2:30到4:30培训”，会提取时间并整理标题，日期与时间仍可修改。")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
                     VStack(alignment: .leading, spacing: 10) {
                         HStack(spacing: 8) {
                             Image(systemName: "checklist")
@@ -819,10 +900,24 @@ struct EditTaskSheet: View {
                             ForEach(store.categories, id: \.self) { Text($0).tag($0) }
                         }.labelsHidden()
                     }
-                    Toggle("设置截止时间", isOn: $hasDueDate)
+                    Toggle("设置日期与时间", isOn: $hasDueDate)
                     if hasDueDate {
-                        DatePicker("截止时间", selection: $dueAt, displayedComponents: [.date, .hourAndMinute])
-                            .datePickerStyle(.compact)
+                        Toggle("仅日期", isOn: $dateOnly)
+                        if dateOnly {
+                            DatePicker("日期", selection: $dueAt, displayedComponents: [.date])
+                                .datePickerStyle(.compact)
+                        } else {
+                            Toggle("时间段", isOn: $hasTimeRange)
+                            if hasTimeRange {
+                                DatePicker("开始时间", selection: $scheduledStartAt, displayedComponents: [.date, .hourAndMinute])
+                                    .datePickerStyle(.compact)
+                            }
+                            DatePicker(hasTimeRange ? "结束时间" : "时间", selection: $dueAt, displayedComponents: [.date, .hourAndMinute])
+                                .datePickerStyle(.compact)
+                            if hasTimeRange && scheduledStartAt >= dueAt {
+                                Text("结束时间需要晚于开始时间。").font(.caption).foregroundStyle(.red)
+                            }
+                        }
                     }
                     Picker("重复", selection: $repeatRule) {
                         ForEach(RepeatRule.allCases) { Text($0.title).tag($0) }
@@ -832,7 +927,7 @@ struct EditTaskSheet: View {
                         .font(.system(size: 11)).foregroundStyle(.secondary) }
                 }
             }
-            .frame(height: min(300 + CGFloat(subtasks.count) * 30 + (hasDueDate ? 30 : 0), 500))
+            .frame(height: min(420 + CGFloat(subtasks.count) * 30 + (hasDueDate ? 90 : 0), 540))
             if let saveError { Text(saveError).foregroundStyle(.red).font(.caption) }
             HStack {
                 if !isNew { Button("删除", role: .destructive) { store.delete(task); dismiss() } }
@@ -841,6 +936,11 @@ struct EditTaskSheet: View {
                 Button(isNew ? "创建" : "保存") {
                     var edited = store.tasks.first(where: { $0.id == task.id }) ?? task
                     edited.title = title; edited.category = category; edited.dueAt = hasDueDate ? dueAt : nil
+                    if hasDueDate && dateOnly {
+                        edited.dueAt = Calendar.current.date(bySettingHour: 23, minute: 59, second: 0, of: dueAt)
+                    }
+                    edited.scheduledStartAt = hasDueDate && !dateOnly && hasTimeRange ? scheduledStartAt : nil
+                    edited.dueDateOnly = hasDueDate ? dateOnly : nil
                     edited.repeatRule = repeatRule; edited.repeatInterval = repeatInterval
                     edited.occurrenceAt = hasDueDate ? dueAt : Date()
                     edited.subtasks = subtasks.compactMap { subtask in
@@ -853,6 +953,7 @@ struct EditTaskSheet: View {
                 }
                     .keyboardShortcut(.defaultAction)
                     .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(hasDueDate && !dateOnly && hasTimeRange && scheduledStartAt >= dueAt)
             }
         }
         .padding(24)
@@ -1002,21 +1103,84 @@ final class FloatingPanel: NSPanel {
     private var widget: FloatingPanel!
     private var orb: FloatingPanel!
     private var statusItem: NSStatusItem!
+    #if MINT_WIDGET_TRIAL
+    private var widgetTrial: MintWidgetTrialCoordinator?
+    private var widgetPreviewWindow: NSWindow?
+    private var receivedWidgetAction = false
+    #endif
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        #if MINT_WIDGET_TRIAL
+        reminders = RemindersSync(tasks: store, allowSystemAccess: false)
+        #else
         reminders = RemindersSync(tasks: store, allowSystemAccess: ProcessInfo.processInfo.environment["MINTTODO_TEST_MODE"] != "1")
+        #endif
         _ = goals
         store.onChange = { [weak self] in
             self?.reminders.scheduleSync()
             self?.goals.reconcileTodos()
+            #if MINT_WIDGET_TRIAL
+            self?.widgetTrial?.refresh()
+            #endif
         }
         goals.reconcileTodos()
+        #if MINT_WIDGET_TRIAL
+        goals.onChange = { [weak self] in self?.widgetTrial?.refresh() }
+        widgetTrial = MintWidgetTrialCoordinator(daily: store, goals: goals)
+        #endif
         makeWindows()
         makeMenuBar()
+        #if MINT_WIDGET_TRIAL
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            guard let self, !self.receivedWidgetAction else { return }
+            self.showWidget(); self.showWidgetPreview()
+        }
+        #else
         showWidget()
+        #endif
         AppUpdater.shared.start()
     }
+
+    #if MINT_WIDGET_TRIAL
+    @objc private func showWidgetPreview() {
+        guard let widgetTrial else { return }
+        if widgetPreviewWindow == nil {
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 788, height: 650),
+                                  styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+            window.title = "Mint Todo · 桌面小组件试用版"
+            window.isReleasedWhenClosed = false
+            window.contentView = NSHostingView(rootView: MintWidgetTrialPreview(coordinator: widgetTrial,
+                showApp: { [weak self] in self?.showWidget() }, showGoals: { [weak self] in self?.openGoals(selected: nil) }))
+            window.center(); widgetPreviewWindow = window
+        }
+        widgetPreviewWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let url = urls.first, url.scheme == "minttodo-widgets-trial" else { return }
+        if url.host == "complete" {
+            receivedWidgetAction = true
+            guard let command = MintWidgetActionLink.command(from: url) else { return }
+            if let widgetTrial { widgetTrial.submit(command) }
+            else { try? MintWidgetFiles().enqueue(command) }
+            return
+        }
+        widgetTrial?.refresh()
+        switch url.host {
+        case "today": showWidget()
+        case "goals": openGoals(selected: nil)
+        case "goal": openGoals(selected: UUID(uuidString: url.lastPathComponent))
+        default: showWidgetPreview()
+        }
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showWidgetPreview()
+        return true
+    }
+    #endif
 
     private func makeWindows() {
         let savedWidth = UserDefaults.standard.double(forKey: "widgetWidth")
@@ -1084,6 +1248,9 @@ final class FloatingPanel: NSPanel {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = NSImage(systemSymbolName: "circle.dotted", accessibilityDescription: "Mint Todo")
         let menu = NSMenu()
+        #if MINT_WIDGET_TRIAL
+        menu.addItem(withTitle: "桌面小组件试用与预览", action: #selector(showWidgetPreview), keyEquivalent: "p").target = self
+        #endif
         menu.addItem(withTitle: "显示待办", action: #selector(showWidgetAction), keyEquivalent: "o").target = self
         menu.addItem(withTitle: "收起为小圆点", action: #selector(showOrbAction), keyEquivalent: "h").target = self
         menu.addItem(withTitle: "我的目标", action: #selector(showGoals), keyEquivalent: "g").target = self

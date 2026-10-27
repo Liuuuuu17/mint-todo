@@ -20,20 +20,20 @@ import SwiftUI
         })
     }
     func start() {
+        #if MINT_WIDGET_TRIAL
+        return
+        #else
         guard !started else { return }
         if ProcessInfo.processInfo.environment["MINTTODO_TEST_MODE"] == "1" && ProcessInfo.processInfo.environment["MINTTODO_TEST_UPDATES"] != "1" { return }
         started = true
         controller.startUpdater()
         if controller.updater.automaticallyChecksForUpdates { controller.updater.checkForUpdatesInBackground() }
+        #endif
     }
     func check() { guard canCheck else { return }; controller.checkForUpdates(nil) }
     var checksAutomatically: Bool {
         get { controller.updater.automaticallyChecksForUpdates }
         set { objectWillChange.send(); controller.updater.automaticallyChecksForUpdates = newValue }
-    }
-    var installsAutomatically: Bool {
-        get { controller.updater.automaticallyDownloadsUpdates }
-        set { objectWillChange.send(); controller.updater.automaticallyDownloadsUpdates = newValue }
     }
     var lastCheck: Date? { controller.updater.lastUpdateCheckDate }
 }
@@ -54,8 +54,8 @@ struct UpdateSettings: View {
                 }.disabled(!updater.canCheck)
             }
             Toggle("自动检查更新", isOn: Binding(get: { updater.checksAutomatically }, set: { updater.checksAutomatically = $0 }))
-            Toggle("自动下载并在退出后安装", isOn: Binding(get: { updater.installsAutomatically }, set: { updater.installsAutomatically = $0 }))
-                .disabled(!updater.checksAutomatically)
+            Text("发现新版时显示更新内容，由你选择更新、稍后提醒或跳过；确认后才下载和安装。")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
             Text("从 Mint Todo 官方 GitHub 发布下载，验证签名后更新；任务和设置保留。")
                 .font(.system(size: 10)).foregroundStyle(.secondary)
             if let date = updater.lastCheck {
