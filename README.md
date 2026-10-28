@@ -24,7 +24,7 @@ GitHub 自动提供的“Source code (zip)”是源码包；安装应用请使�
 
 <img src="https://github.com/Liuuuuu17/mint-todo/releases/download/widgets-trial-0.1.0/WidgetTrialIcon.png" alt="小组件试用版图标" width="140">
 
-### [↓ 下载小组件试用版（ZIP）](https://github.com/Liuuuuu17/mint-todo/releases/download/widgets-trial-0.1.0/MintTodo-Widgets-Trial.zip)
+### [↓ 下载小组件试用版（DMG）](https://github.com/Liuuuuu17/mint-todo/releases/download/widgets-trial-0.1.0/MintTodo-Widgets-Trial.dmg)
 
 [试用说明与反馈](https://github.com/Liuuuuu17/mint-todo/releases/tag/widgets-trial-0.1.0)
 
@@ -36,7 +36,7 @@ GitHub 自动提供的“Source code (zip)”是源码包；安装应用请使�
 | Medium | **全部未完成待办**，包含未来日期任务，最多显示三项，可打开完整列表 |
 | Large | 多个目标、当前阶段及下一项任务 |
 
-解压后把 App 放入“应用程序”，打开一次，再在桌面右键 → 编辑小组件 → 搜索 **Mint Todo · 试用**。使用你看到的手写 Mint Todo 与薄荷叶独立图标。
+打开 DMG，把 Mint Todo Widgets Trial.app 拖到“Applications”文件夹，打开一次，再在桌面右键 → 编辑小组件 → 搜索 **Mint Todo · 试用**。使用你看到的手写 Mint Todo 与薄荷叶独立图标。
 
 本机试用模式下，点击小圆圈会唤起试用 App 并同步完成状态。尚未经过 Apple Developer ID 签名或公证，其他 Mac 可能出现来源确认或阻止打开的提示；跨机器表现仍需测试。
 
