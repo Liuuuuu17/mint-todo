@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+    <key>CFBundleName</key><string>Mint Todo Widgets Trial</string>
+    <key>CFBundleDisplayName</key><string>Mint Todo · 小组件试用</string>
+    <key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    <key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleVersion</key><string>15</string>
+    <key>CFBundleShortVersionString</key><string>2.5.1</string>
+    <key>CFBundleIconFile</key><string>TrialIcon.icns</string>
+    <key>LSMinimumSystemVersion</key><string>14.0</string>
+    <key>LSUIElement</key><true/>
+    <key>NSHighResolutionCapable</key><true/>
+    <key>CFBundleURLTypes</key><array><dict>
+        <key>CFBundleURLName</key><string>Mint Todo Widget Trial</string>
+        <key>CFBundleURLSchemes</key><array><string>minttodo-widgets-trial</string></array>
+    </dict></array>
+</dict></plist>
