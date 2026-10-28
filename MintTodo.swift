@@ -1169,7 +1169,9 @@ final class FloatingPanel: NSPanel {
         }
         widgetTrial?.refresh()
         switch url.host {
-        case "today": showWidget()
+        case "today", "all":
+            store.selectedStatus = .todo
+            showWidget()
         case "goals": openGoals(selected: nil)
         case "goal": openGoals(selected: UUID(uuidString: url.lastPathComponent))
         default: showWidgetPreview()
@@ -1246,7 +1248,18 @@ final class FloatingPanel: NSPanel {
 
     private func makeMenuBar() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem.button?.image = NSImage(systemSymbolName: "circle.dotted", accessibilityDescription: "Mint Todo")
+        #if MINT_WIDGET_TRIAL
+        let menuBarSymbol = "leaf.fill"
+        let menuBarDescription = "Mint Todo · 小组件试用"
+        #else
+        let menuBarSymbol = "checkmark"
+        let menuBarDescription = "Mint Todo"
+        #endif
+        let menuBarImage = NSImage(systemSymbolName: menuBarSymbol, accessibilityDescription: menuBarDescription)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 16, weight: .medium))
+        menuBarImage?.isTemplate = true
+        statusItem.button?.image = menuBarImage
+        statusItem.button?.toolTip = menuBarDescription
         let menu = NSMenu()
         #if MINT_WIDGET_TRIAL
         menu.addItem(withTitle: "桌面小组件试用与预览", action: #selector(showWidgetPreview), keyEquivalent: "p").target = self

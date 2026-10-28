@@ -4,4 +4,6 @@ work/
 
 .build-deps/
 release/
+**/xcuserdata/
+**/*.xcuserstate
 dist/*.dmg
