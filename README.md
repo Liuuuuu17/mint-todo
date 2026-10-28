@@ -22,11 +22,11 @@ GitHub 自动提供的“Source code (zip)”是源码包；安装应用请使�
 
 ## 桌面小组件试用版（独立下载）
 
-<img src="https://github.com/Liuuuuu17/mint-todo/releases/download/widgets-trial-0.1.0/WidgetTrialIcon.png" alt="小组件试用版图标" width="140">
+<img src="https://github.com/Liuuuuu17/mint-todo/releases/download/widgets-trial-0.1.1/WidgetTrialIcon.png" alt="小组件试用版图标" width="140">
 
-### [↓ 下载小组件试用版（DMG）](https://github.com/Liuuuuu17/mint-todo/releases/download/widgets-trial-0.1.0/MintTodo-Widgets-Trial.dmg)
+### [↓ 下载小组件试用版（DMG）](https://github.com/Liuuuuu17/mint-todo/releases/download/widgets-trial-0.1.1/MintTodo-Widgets-Trial.dmg)
 
-[试用说明与反馈](https://github.com/Liuuuuu17/mint-todo/releases/tag/widgets-trial-0.1.0)
+[试用说明与反馈](https://github.com/Liuuuuu17/mint-todo/releases/tag/widgets-trial-0.1.1)
 
 适用于 **macOS 14 及以上，兼容 Apple Silicon 和 Intel Mac**。这是独立的 **Mint Todo Widgets Trial.app**，可与正式版同时保留；任务与设置独立，正式版下载和自动更新通道保持不变。
 
@@ -39,6 +39,8 @@ GitHub 自动提供的“Source code (zip)”是源码包；安装应用请使�
 打开 DMG，把 Mint Todo Widgets Trial.app 拖到“Applications”文件夹，打开一次，再在桌面右键 → 编辑小组件 → 搜索 **Mint Todo · 试用**。使用你看到的手写 Mint Todo 与薄荷叶独立图标。
 
 本机试用模式下，点击小圆圈会唤起试用 App 并同步完成状态。尚未经过 Apple Developer ID 签名或公证，其他 Mac 可能出现来源确认或阻止打开的提示；跨机器表现仍需测试。
+
+菜单栏图标可区分两个版本：正式版是 **对勾 ✓**，小组件试用版是 **叶子**；两者均自动适配菜单栏的深浅颜色。
 
 ## 可以做什么
 
@@ -61,11 +63,11 @@ GitHub 自动提供的“Source code (zip)”是源码包；安装应用请使�
 
 自动更新从本仓库的 GitHub Releases 获取更新源和安装包，并校验签名。请从上方固定入口下载，不需要寻找某个功能分支里的安装包。
 
-[详细使用说明与构建方法](https://github.com/Liuuuuu17/mint-todo/blob/v2.5/USER_GUIDE.md) · [开发文档](https://github.com/Liuuuuu17/mint-todo/blob/v2.5/DEVELOPMENT.md)
+[详细使用说明与构建方法](https://github.com/Liuuuuu17/mint-todo/blob/v2.5.1/USER_GUIDE.md) · [开发文档](https://github.com/Liuuuuu17/mint-todo/blob/v2.5.1/DEVELOPMENT.md)
 
 ## 从源码构建
 
-最新发布源码见 [v2.5](https://github.com/Liuuuuu17/mint-todo/tree/v2.5)。安装 Xcode 命令行工具后，在源码目录运行：
+最新发布源码见 [v2.5.1](https://github.com/Liuuuuu17/mint-todo/tree/v2.5.1)。安装 Xcode 命令行工具后，在源码目录运行：
 
 ```sh
 zsh build.sh
