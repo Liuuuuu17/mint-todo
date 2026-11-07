@@ -3,6 +3,14 @@ import CoreText
 import SwiftUI
 import UniformTypeIdentifiers
 
+enum TodoTextLevel: Double, CaseIterable {
+    case category = 16.5
+    case task = 13.5
+    case subtask = 12
+
+    func pointSize(taskSize: Double) -> Double { rawValue * taskSize / 13.5 }
+}
+
 struct ImportedFont: Codable, Identifiable, Hashable {
     let id: UUID
     let fileName: String
@@ -122,6 +130,10 @@ private struct FontManifest: Codable {
         return .system(size: adjustedSize, weight: weight, design: monospaced ? .monospaced : .default)
     }
 
+    func todoFont(_ level: TodoTextLevel, weight: Font.Weight = .regular, monospaced: Bool = false) -> Font {
+        font(CGFloat(level.rawValue), weight: weight, monospaced: monospaced)
+    }
+
     func previewFont(_ size: CGFloat) -> Font {
         let size = size * CGFloat(textSize / 13.5)
         if let selected = fonts.first(where: { $0.id == selectedID }) {
@@ -223,12 +235,23 @@ struct SettingsSheet: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("字体").font(.system(size: 14, weight: .semibold))
                 HStack {
-                    Text("字号").font(.system(size: 12))
+                    Text("任务字号").font(.system(size: 12))
                     Slider(value: $fontLibrary.textSize, in: 10...24, step: 0.5)
                     Text(String(format: "%.1f pt", fontLibrary.textSize))
                         .font(.system(size: 11).monospacedDigit()).frame(width: 54)
                     Button("重置") { fontLibrary.textSize = 13.5 }
                 }
+                Text("调整任务字号，分类与子任务同步缩放，始终保持：分类 > 任务 > 子任务。")
+                    .font(.caption).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("分类 · \(String(format: "%.1f", TodoTextLevel.category.pointSize(taskSize: fontLibrary.textSize))) pt")
+                        .font(fontLibrary.previewFont(CGFloat(TodoTextLevel.category.rawValue))).fontWeight(.semibold)
+                    Text("任务 · \(String(format: "%.1f", TodoTextLevel.task.pointSize(taskSize: fontLibrary.textSize))) pt")
+                        .font(fontLibrary.previewFont(CGFloat(TodoTextLevel.task.rawValue)))
+                    Text("子任务 · \(String(format: "%.1f", TodoTextLevel.subtask.pointSize(taskSize: fontLibrary.textSize))) pt")
+                        .font(fontLibrary.previewFont(CGFloat(TodoTextLevel.subtask.rawValue))).padding(.leading, 16)
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(.primary.opacity(0.04)))
                 VStack(spacing: 7) {
                     Image(systemName: "textformat").font(.system(size: 22)).foregroundStyle(.secondary)
                     Text("将字体文件拖到这里").font(.system(size: 13))

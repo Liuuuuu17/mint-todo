@@ -597,7 +597,7 @@ struct WidgetView: View {
                     Image(systemName: "chevron.down")
                         .font(.system(size: 9, weight: .bold))
                         .rotationEffect(.degrees(collapsedGroups.contains(name) ? -90 : 0))
-                    Text(name).font(fontLibrary.font(13, weight: .semibold))
+                    Text(name).font(fontLibrary.todoFont(.category, weight: .semibold))
                     Text("\(tasks.count)").font(fontLibrary.font(11)).foregroundStyle(.tertiary)
                     Spacer()
                 }
@@ -625,7 +625,7 @@ struct WidgetView: View {
                 Button { editing = TaskEditorRequest(task: task) } label: {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(task.title)
-                            .font(fontLibrary.font(13.5, monospaced: true))
+                            .font(fontLibrary.todoFont(.task, monospaced: true))
                             .strikethrough(task.status == .completed || task.status == .cancelled)
                         if let dueAt = task.dueAt {
                             Label(NaturalTaskTime(start: task.scheduledStartAt, end: dueAt, dateOnly: task.dueDateOnly == true).label(), systemImage: "calendar")
@@ -693,7 +693,7 @@ struct WidgetView: View {
                         .help(subtask.isCompleted ? "恢复子任务" : "完成子任务")
                         Button { editing = TaskEditorRequest(task: task) } label: {
                             Text(subtask.title)
-                                .font(fontLibrary.font(12.5, monospaced: true))
+                                .font(fontLibrary.todoFont(.subtask, monospaced: true))
                                 .strikethrough(subtask.isCompleted)
                                 .foregroundStyle(subtask.isCompleted ? Color.secondary : Color.primary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -811,7 +811,7 @@ struct EditTaskSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     TextField("待办内容", text: $title)
-                        .font(fontLibrary.font(14))
+                        .font(fontLibrary.todoFont(.task))
                     if let detected = detectedTime {
                         VStack(alignment: .leading, spacing: 6) {
                             Label("识别到：" + detected.label(), systemImage: "calendar.badge.clock")
@@ -857,7 +857,7 @@ struct EditTaskSheet: View {
                                 .foregroundStyle(.secondary)
                                 .frame(width: 20)
                             TextField("添加子任务", text: $subtaskInput)
-                                .font(fontLibrary.font(13))
+                                .font(fontLibrary.todoFont(.subtask))
                                 .focused($subtaskInputFocused)
                                 .onSubmit(addSubtask)
                             Button(action: addSubtask) {
@@ -875,7 +875,7 @@ struct EditTaskSheet: View {
                                     HStack(spacing: 8) {
                                         Text("•").frame(width: 20)
                                         TextField("子任务内容", text: $subtask.title)
-                                            .font(fontLibrary.font(13))
+                                            .font(fontLibrary.todoFont(.subtask))
                                         Button { subtasks.removeAll { $0.id == subtaskID } } label: {
                                             Image(systemName: "minus.circle")
                                                 .font(.system(size: 20, weight: .light))
