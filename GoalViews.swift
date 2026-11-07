@@ -126,6 +126,7 @@ struct GoalDetailView: View {
     }
     private func phaseCard(_ phase: GoalPhase, index: Int) -> some View {
         VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top) {
             Button {
                 if collapsed.contains(phase.id) { collapsed.remove(phase.id) } else { collapsed.insert(phase.id) }
             } label: {
@@ -140,6 +141,8 @@ struct GoalDetailView: View {
                     Spacer(); Image(systemName: collapsed.contains(phase.id) ? "chevron.right" : "chevron.down")
                 }.contentShape(Rectangle())
             }.buttonStyle(.plain)
+            PhaseTodoMenu(store: store, phaseID: phase.id)
+            }
             HStack { ProgressView(value: phase.progress.fraction).tint(.mint); Text(phase.progress.label).font(.caption).foregroundStyle(.secondary) }
             if !collapsed.contains(phase.id) {
                 if !phase.summary.isEmpty { Text(phase.summary).font(.callout).foregroundStyle(.secondary) }
@@ -154,6 +157,7 @@ struct GoalDetailView: View {
                                     .font(.caption).foregroundStyle(.secondary)
                             }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                         }.buttonStyle(.plain)
+                        GoalTodoMenu(store: store, taskID: task.id)
                         Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
                     }.padding(.vertical, 6)
                 }
@@ -241,5 +245,55 @@ struct GoalTaskDetailView: View {
         guard var goal = store.goals.first(where: { $0.id == task.goalID }), let p = goal.phases.firstIndex(where: { $0.id == task.phaseID }) else { return }
         goal.phases[p].tasks.append(GoalTask(goalID: goal.id, phaseID: task.phaseID, title: title))
         _ = store.save(goal)
+    }
+}
+
+struct GoalTodoMenu: View {
+    @ObservedObject var store: GoalStore
+    let taskID: UUID
+    @State private var duplicate = false
+    @State private var today = false
+    private var task: GoalTask? { store.task(taskID) }
+    var body: some View {
+        Menu {
+            if task?.linkedTodoID != nil { Text("已关联待办") }
+            else {
+                Button("加入待办列表") { attach(today: false) }
+                Button("加入今日待办") { attach(today: true) }
+            }
+        } label: { Image(systemName: "ellipsis").frame(width: 24, height: 24).contentShape(Rectangle()) }
+        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+        .help("加入日常待办")
+        .confirmationDialog("日常待办已有同名任务", isPresented: $duplicate) {
+            Button("关联已有待办") {
+                if let task, let existing = store.daily.tasks.first(where: { $0.title == task.title && $0.goalTaskID == nil }) {
+                    store.attach(taskID, existing: existing.id)
+                }
+            }
+            Button("仍创建新的待办") { store.attach(taskID, today: today) }
+        } message: { Text("关联后以已有待办的完成状态为准。") }
+    }
+    private func attach(today: Bool) {
+        self.today = today
+        if let task, store.daily.tasks.contains(where: { $0.title == task.title && $0.goalTaskID == nil }) { duplicate = true }
+        else { store.attach(taskID, today: today) }
+    }
+}
+struct PhaseTodoMenu: View {
+    @ObservedObject var store: GoalStore
+    let phaseID: UUID
+    @State private var confirm = false
+    @State private var today = false
+    private var candidates: [GoalTask] { store.pendingPhaseTasks(phaseID) }
+    var body: some View {
+        Menu {
+            Button("将未完成任务加入待办…") { today = false; confirm = true }
+            Button("将未完成任务加入今日待办…") { today = true; confirm = true }
+        } label: { Image(systemName: "ellipsis").frame(width: 24, height: 24).contentShape(Rectangle()) }
+        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+        .disabled(candidates.isEmpty).help("阶段待办快捷操作")
+        .confirmationDialog("加入本阶段的 \(candidates.count) 项任务？", isPresented: $confirm) {
+            Button(today ? "加入今日待办" : "加入待办列表") { store.attachPhase(phaseID, today: today) }
+        } message: { Text("仅加入未开始或进行中且尚未关联的任务。同名的独立待办会保留；如需关联已有待办，请使用任务旁的三个点菜单。") }
     }
 }

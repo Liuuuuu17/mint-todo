@@ -31,8 +31,9 @@ struct GoalEditorView: View {
     @State private var taskEditor: GoalTask?
     @State private var issue = ""
     @State private var duplicateConfirmation = false
+    @State private var importRevision = false
     init(initial: Goal, heading: String, store: GoalStore, isNew: Bool, expectedOriginal: Goal? = nil, onSaved: @escaping () -> Void = {}) {
-        _draft = State(initialValue: initial); self.heading = heading; self.store = store; self.isNew = isNew; self.expectedOriginal = expectedOriginal; self.onSaved = onSaved
+        _draft = State(initialValue: initial); self.heading = heading; self.store = store; self.isNew = isNew; self.expectedOriginal = expectedOriginal ?? (isNew ? nil : initial); self.onSaved = onSaved
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -43,6 +44,9 @@ struct GoalEditorView: View {
             }
             Text("\(draft.phases.count) 个阶段 · \(draft.taskCount) 项任务 · 确认前的编辑不会写入数据库")
                 .font(.caption).foregroundStyle(.secondary)
+            if !isNew {
+                Button("导入 JSON 更新当前目标…") { importRevision = true }
+            }
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     TextField("目标名称", text: $draft.title).font(.title3)
@@ -72,6 +76,9 @@ struct GoalEditorView: View {
             }
             if !issue.isEmpty { Text(issue).font(.callout).foregroundStyle(.red).textSelection(.enabled) }
         }.padding(24).frame(width: 780, height: 700)
+        .sheet(isPresented: $importRevision) {
+            PlanImportView(store: store, original: draft, onRevision: { draft = $0 })
+        }
         .sheet(item: $taskEditor) { task in
             GoalTaskEditor(initial: task) { edited in
                 for p in draft.phases.indices {
@@ -181,29 +188,47 @@ struct PlanImportView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var store: GoalStore
     let parseImmediately: Bool
+    let original: Goal?
+    let onRevision: ((Goal) -> Void)?
+    @State private var revision: PlanRevision?
     @State private var initialized = false
     @State private var text: String
-    init(store: GoalStore, initialText: String = "", parseImmediately: Bool = false) {
+    init(store: GoalStore, initialText: String = "", parseImmediately: Bool = false, original: Goal? = nil, onRevision: ((Goal) -> Void)? = nil) {
         self.store = store
         self.parseImmediately = parseImmediately
+        self.original = original; self.onRevision = onRevision
         _text = State(initialValue: initialText)
     }
     @State private var issue = ""
     @State private var preview: Goal?
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack { Text("导入长期任务").font(.title2.bold()); Spacer(); Button("关闭") { dismiss() } }
+            HStack { Text(original == nil ? "导入长期任务" : "导入 JSON 更新当前目标").font(.title2.bold()); Spacer(); Button("关闭") { dismiss() } }
             Text("把 AI 生成的完整计划 JSON 粘贴到下方，点“解析并预览”，编辑确认后存入长期任务。无需 API Key。")
                 .font(.callout).foregroundStyle(.secondary)
+            if let original {
+                Text("更新目标：\(original.title)。按任务 ID 或唯一同名任务保留完成记录和待办关联；未匹配的任务按新增处理。请重点检查改名任务及移除项。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             HStack {
                 Button("复制 AI 提示词") { AISettings.copyPrompt() }
                 Button("从剪贴板粘贴") { text = NSPasteboard.general.string(forType: .string) ?? "" }
                 Button("选择 JSON 文件…") { chooseFile() }
             }
             TextEditor(text: $text).font(.system(size: 12, design: .monospaced)).border(.secondary.opacity(0.2))
+            if let revision {
+                Text("更新后：\(revision.goal.phases.count) 个阶段，\(revision.goal.taskCount) 项任务；新增 \(revision.added) 项，移除 \(revision.removed.count) 项。")
+                if !revision.removed.isEmpty {
+                    ScrollView { Text("将移除：\n" + revision.removed.joined(separator: "\n")) }.frame(maxHeight: 90)
+                    Text("移除任务的日常待办会保留并解除关联。").font(.caption)
+                }
+                Button("应用到编辑草稿") { onRevision?(revision.goal); dismiss() }
+                Text("返回编辑窗口后可继续修改，点击保存修改才会更新原目标。").font(.caption).foregroundStyle(.secondary)
+            }
             Text(issue).foregroundStyle(.red).font(.callout).textSelection(.enabled)
             HStack { Text("支持完整的 Markdown JSON 代码块包装。").font(.caption).foregroundStyle(.secondary); Spacer(); Button("解析并预览") { parse() }.disabled(text.isEmpty).keyboardShortcut(.defaultAction) }
         }.padding(24).frame(width: 740, height: 620)
+        .onChange(of: text) { _ in revision = nil; issue = "" }
         .task {
             guard !initialized else { return }
             initialized = true
@@ -214,7 +239,15 @@ struct PlanImportView: View {
         }
         .sheet(item: $preview) { goal in GoalEditorView(initial: goal, heading: "计划导入预览", store: store, isNew: true, onSaved: { dismiss() }) }
     }
-    private func parse() { do { preview = try PlanCodec.parse(text).goal; issue = "" } catch { issue = error.localizedDescription } }
+    private func parse() {
+        revision = nil
+        do {
+            let proposal = try PlanCodec.parse(text).goal
+            if let original { revision = try PlanRevision.prepare(original: original, proposal: proposal) }
+            else { preview = proposal }
+            issue = ""
+        } catch { issue = error.localizedDescription }
+    }
     private func chooseFile() {
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]; panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }

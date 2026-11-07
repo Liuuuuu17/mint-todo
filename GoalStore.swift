@@ -132,6 +132,18 @@ private struct GoalFile: Codable {
         }
         return false
     }
+    func pendingPhaseTasks(_ phaseID: UUID) -> [GoalTask] {
+        goals.flatMap(\.phases).filter { $0.id == phaseID }.flatMap(\.tasks).filter { task in
+            [.notStarted, .inProgress].contains(task.state) && task.linkedTodoID == nil &&
+                !daily.tasks.contains(where: { $0.goalTaskID == task.id })
+        }
+    }
+    func attachPhase(_ phaseID: UUID, today: Bool = false) {
+        for task in pendingPhaseTasks(phaseID) {
+            attach(task.id, today: today)
+            if self.task(task.id)?.linkedTodoID == nil { break }
+        }
+    }
     func attach(_ id: UUID, existing: UUID? = nil, today: Bool = false) {
         guard let task = task(id) else { return }
         guard let todoID = daily.ensureGoalTodo(task, existing: existing, today: today, category: goals.first(where: { $0.id == task.goalID })?.title ?? "目标任务") else { errorMessage = "待办未保存，目标关联没有变更。"; return }
