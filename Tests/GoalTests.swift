@@ -34,6 +34,7 @@ final class MockAPIProtocol: URLProtocol {
             try schemaTests()
             try storageTests()
             try revisionTests()
+            try phaseTodoTests()
             try resizeTests()
             try dailyWorkflowTests()
             try NaturalTimeTests.run { condition, name in try check(condition, name) }
@@ -284,6 +285,29 @@ final class MockAPIProtocol: URLProtocol {
         let before = try Data(contentsOf: store.fileURL)
         try check(!store.save(snapshot, expected: snapshot), "stale AI preview rejected")
         try check(try Data(contentsOf: store.fileURL) == before, "stale preview never overwrites recent progress")
+    }
+    @MainActor static func phaseTodoTests() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("MintPhase-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let daily = TaskStore(folder: folder, watch: false)
+        let store = GoalStore(daily: daily, folder: folder)
+        let id = store.insert(try PlanCodec.parse(sample).goal)!
+        let phase = store.goals.first(where: { $0.id == id })!.phases[0]
+        _ = store.updateTask(phase.tasks[0].id) { $0.state = .completed }
+        try check(store.pendingPhaseTasks(phase.id).count == 1, "phase excludes completed tasks")
+        store.attachPhase(phase.id, today: true)
+        try check(daily.tasks.count == 1 && daily.tasks[0].goalTaskID == phase.tasks[1].id, "phase attaches pending task")
+        try check(daily.tasks[0].dueAt.map { Calendar.current.isDateInToday($0) } == true, "phase today sets local date")
+        store.attachPhase(phase.id)
+        try check(daily.tasks.count == 1 && store.pendingPhaseTasks(phase.id).isEmpty, "phase repeat never duplicates linked todos")
+        let snapshot = store.goals[0]
+        var proposal = try PlanCodec.parse(PlanCodec.export(snapshot)).goal
+        proposal.phases[0].tasks[1].notes = "外部 AI 修改说明"
+        let revision = try PlanRevision.prepare(original: snapshot, proposal: proposal)
+        try check(store.goals[0] == snapshot, "external JSON preview does not persist")
+        try check(store.save(revision.goal, expected: snapshot), "external JSON revision saves existing goal")
+        try check(store.goals.count == 1 && store.task(phase.tasks[1].id)?.linkedTodoID == daily.tasks[0].id, "external revision retains todo association")
+        try check(store.task(phase.tasks[0].id)?.state == .completed, "external revision retains completed task")
     }
     static func resizeTests() throws {
         let frame = NSRect(x: 100, y: 100, width: 405, height: 560)
