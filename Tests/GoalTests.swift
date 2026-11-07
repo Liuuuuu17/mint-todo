@@ -31,6 +31,9 @@ final class MockAPIProtocol: URLProtocol {
     @MainActor static func main() async {
         do {
             _ = NSApplication.shared
+            for size in stride(from: 10.0, through: 24.0, by: 0.5) {
+                try check(TodoTextLevel.category.pointSize(taskSize: size) > TodoTextLevel.task.pointSize(taskSize: size) && TodoTextLevel.task.pointSize(taskSize: size) > TodoTextLevel.subtask.pointSize(taskSize: size), "font hierarchy at task size \(size)")
+            }
             try schemaTests()
             try storageTests()
             try revisionTests()
